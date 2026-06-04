@@ -15,7 +15,7 @@ const getEnv = (key, fallback) => {
 // ✅ Detect environment
 const isLocal = window.location.hostname === 'localhost' || 
                 window.location.hostname === '127.0.0.1' ||
-                window.location.hostname === '192.168.1.82';
+                window.location.hostname === 'localhost';
 
 console.log("🌍 Environment detected:", isLocal ? "LOCAL" : "PRODUCTION");
 console.log("🔑 VITE_REVERB_APP_KEY:", getEnv('VITE_REVERB_APP_KEY', 'not-set'));
@@ -26,12 +26,14 @@ console.log("🔌 VITE_REVERB_PORT:", getEnv('VITE_REVERB_PORT', 'not-set'));
 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 console.log("📱 Device type:", isMobile ? "MOBILE" : "DESKTOP");
 
+const AUTH_ENDPOINT = `${getEnv('VITE_API_URL', isLocal ? 'http://localhost:8000' : 'https://hamroastro.com')}/api/broadcasting/auth`;
+
 // ✅ Configuration with mobile-optimized settings
 const config = {
     broadcaster: "reverb",
     key: getEnv('VITE_REVERB_APP_KEY', 'sqja9bn48v14nbqjmts5'),
     
-    wsHost: getEnv('VITE_REVERB_HOST', isLocal ? '192.168.1.82' : 'hamroastro.com'),
+    wsHost: getEnv('VITE_REVERB_HOST', isLocal ? 'localhost' : 'hamroastro.com'),
     wsPort: parseInt(getEnv('VITE_REVERB_PORT', isLocal ? '8080' : '443')),
     wssPort: parseInt(getEnv('VITE_REVERB_PORT', isLocal ? '8080' : '443')),
     forceTLS: getEnv('VITE_REVERB_SCHEME', isLocal ? 'http' : 'https') === 'https',
@@ -44,7 +46,7 @@ const config = {
     pongTimeout: isMobile ? 10000 : 30000,        // 10s for mobile vs 30s for desktop
     unavailableTimeout: isMobile ? 3000 : 10000,  // 3s for mobile vs 10s for desktop
     
-    authEndpoint: `${getEnv('VITE_API_URL', isLocal ? 'http://192.168.1.82:8000' : 'https://hamroastro.com')}/api/broadcasting/auth`,
+   authEndpoint: AUTH_ENDPOINT,
     
     auth: {
         headers: {
@@ -69,7 +71,7 @@ const config = {
                 console.log("Token (first 20 chars):", token.substring(0, 20) + "...");
                 console.log("================================");
 
-                fetch(options.authEndpoint, {
+                fetch(AUTH_ENDPOINT, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,

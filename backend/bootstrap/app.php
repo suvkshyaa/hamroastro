@@ -12,19 +12,19 @@ return Application::configure(basePath: dirname(__DIR__))
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
+    ->withBroadcasting(                                    // ✅ ADD THIS
+        __DIR__.'/../routes/channels.php',                 // ✅ ADD THIS
+        ['prefix' => 'api', 'middleware' => ['auth:sanctum']] // ✅ ADD THIS
+    )                                                      // ✅ ADD THIS
     ->withMiddleware(function (Middleware $middleware) {
-
-        // Enable CORS for API
         $middleware->api(prepend: [
             \Illuminate\Http\Middleware\HandleCors::class,
         ]);
-
-        // ❌ No sessions for API (correct)
-        // $middleware->statefulApi();
+        $middleware->alias([
+            'admin' => \App\Http\Middleware\AdminMiddleware::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-
-        // Always return JSON for failed API authentication
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, $request) {
             if ($request->is('api/*')) {
                 return response()->json([
@@ -33,19 +33,4 @@ return Application::configure(basePath: dirname(__DIR__))
             }
         });
     })
-
-    ->withMiddleware(function (Middleware $middleware) {
-
-    // API CORS handler
-    $middleware->api(prepend: [
-        \Illuminate\Http\Middleware\HandleCors::class,
-    ]);
-
-    // ⭐ REGISTER MIDDLEWARE ALIASES HERE
-    $middleware->alias([
-        'admin' => \App\Http\Middleware\AdminMiddleware::class,
-    ]);
-    })
-
-
     ->create();

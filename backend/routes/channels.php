@@ -54,11 +54,9 @@ Broadcast::channel('admin', function ($user) {
         'role' => $user->role ?? 'customer',
     ]);
 
-    // Allow if user is admin OR temporarily allow all for testing
+
     $allowed = ($user->role ?? '') === 'admin';
 
-    // For testing, temporarily allow all:
-    // $allowed = true;
 
     Log::info("🔐 Admin auth result: " . ($allowed ? "ALLOWED ✅" : "DENIED ❌"));
 

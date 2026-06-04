@@ -10,11 +10,11 @@ return new class extends Migration
     {
         Schema::create('messages', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id');      // ✅ Changed from sender_id
+            $table->unsignedBigInteger('user_id');   
             $table->unsignedBigInteger('receiver_id');
-            $table->text('text')->nullable();            // ✅ Changed from message
-            $table->boolean('is_read')->default(false);  // ✅ Added for read receipts
-            $table->unsignedBigInteger('conversation_id')->nullable(); // ✅ For your model
+            $table->text('text')->nullable();           
+            $table->boolean('is_read')->default(false);
+            $table->unsignedBigInteger('conversation_id')->nullable(); 
             $table->timestamps();
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');

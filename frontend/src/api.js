@@ -1,9 +1,26 @@
-
 import axios from "axios";
 
+// ✅ VITE SYNTAX - Use import.meta.env
+const getEnv = (key, fallback) => {
+  try {
+    return import.meta.env[key] || fallback;
+  } catch (e) {
+    return fallback;
+  }
+};
 
-const baseURL = process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8000');
+// ✅ Detect environment
+const isLocal = window.location.hostname === 'localhost' || 
+                window.location.hostname === '127.0.0.1';
 
+// ✅ Get base URL from environment or auto-detect
+const baseURL = getEnv(
+  'VITE_API_URL', 
+  isLocal ? 'http://localhost:8000' : 'https://hamroastro.com'
+);
+
+console.log("🌍 API Environment:", isLocal ? "LOCAL" : "PRODUCTION");
+console.log("🔗 API Base URL:", baseURL);
 
 const API = axios.create({
   baseURL: `${baseURL}/api`,
@@ -11,65 +28,85 @@ const API = axios.create({
     "Content-Type": "application/json",
     Accept: "application/json",
   },
+  withCredentials: true,
 });
 
-
+// ✅ CSRF Cookie helper
 export const getCsrfCookie = async () => {
   try {
     await axios.get(`${baseURL}/sanctum/csrf-cookie`, {
       withCredentials: true,
     });
+    console.log("✅ CSRF cookie loaded");
   } catch (err) {
     console.error("❌ Failed to load CSRF cookie:", err);
   }
 };
 
-
-export const getChatUsers = () => API.get("/chat-users");
-
+// ✅ Load token from localStorage on init
 const token = localStorage.getItem("token");
 if (token) {
   API.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   console.log("✅ Token loaded from localStorage");
 }
 
-
+// ✅ Request interceptor - Add token to every request
 API.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
-
+    
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
+    // Debug log
+    console.log(`📤 ${config.method.toUpperCase()} ${config.url}`, {
+      hasAuth: !!config.headers.Authorization
+    });
+
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error("❌ Request interceptor error:", error);
+    return Promise.reject(error);
+  }
 );
 
-
+// ✅ Response interceptor - Handle 401 errors
 API.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`📥 ${response.config.method.toUpperCase()} ${response.config.url}`, {
+      status: response.status
+    });
+    return response;
+  },
   (error) => {
+    console.error("❌ API Error:", {
+      url: error.config?.url,
+      status: error.response?.status,
+      message: error.response?.data?.message || error.message
+    });
+
     if (error.response?.status === 401) {
       console.log("❌ 401 Unauthorized - Clearing session");
       
-      
+      // Clear all auth data
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       localStorage.removeItem("role");
       delete API.defaults.headers.common['Authorization'];
       
-      
+      // Redirect to login (avoid loop)
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login';
       }
     }
+    
     return Promise.reject(error);
   }
 );
 
-
+// ✅ Helper to set/remove auth token
 export const setAuthToken = (token) => {
   if (token) {
     API.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -81,5 +118,8 @@ export const setAuthToken = (token) => {
     console.log("🗑️ Auth token removed from API headers");
   }
 };
+
+// ✅ Export helper functions
+export const getChatUsers = () => API.get("/chat-users");
 
 export default API;

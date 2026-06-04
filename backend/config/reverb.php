@@ -61,7 +61,7 @@ return [
     | your server will support, including their connection credentials.
     |
     */
-    'apps' => [
+        'apps' => [
         'provider' => 'config',
         'apps' => [
             [
@@ -69,16 +69,16 @@ return [
                 'secret' => env('REVERB_APP_SECRET'),
                 'app_id' => env('REVERB_APP_ID'),
                 'options' => [
-                    'host' => env('REVERB_SERVER_HOST', 'localhost'),
-                    'port' => env('REVERB_SERVER_PORT', 443),
-                    'scheme' => env('REVERB_SCHEME', 'https'),
-                    'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
+                    'host' => env('REVERB_SERVER_HOST', 'localhost'), 
+                    'port' => env('REVERB_PORT', 8080),        
+                    'scheme' => env('REVERB_SCHEME', 'http'),  
+                    'useTLS' => false,                          
                 ],
-                'allowed_origins' => ['*'],
-                'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
-                'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
-                'max_connections' => env('REVERB_APP_MAX_CONNECTIONS'),
-                'max_message_size' => env('REVERB_APP_MAX_MESSAGE_SIZE', 10_000),
+            'allowed_origins' => ['*'],
+            'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
+            'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
+            'max_connections' => env('REVERB_APP_MAX_CONNECTIONS'),
+            'max_message_size' => env('REVERB_APP_MAX_MESSAGE_SIZE', 10_000),
             ],
         ],
     ],

@@ -6,50 +6,28 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\UserProfileController;
-use App\Http\Controllers\ChatController;
+
+Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
 // Public routes
 Route::post('register', [AuthController::class, 'register']);
 Route::post('login', [AuthController::class, 'login']);
 
-// Public chat routes
-Route::prefix('chat')->group(function () {
-    Route::post('/send', [ChatController::class, 'customerSend']);
-    Route::get('/history/{id}', [ChatController::class, 'history']);
-
-    Route::middleware('auth:sanctum')->group(function () {
-        Route::post('/admin/reply', [ChatController::class, 'adminReply']);
-        Route::get('/customers', [ChatController::class, 'allCustomers']);
-    });
-});
-
-// Protected routes - Require Authentication
 Route::middleware('auth:sanctum')->group(function () {
-
-    // 🔥 CRITICAL: Broadcasting auth route MUST be here
-    Broadcast::routes();
-
-    // Auth endpoints
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('user', fn(Request $request) => $request->user());
-
-    // User Profile
-    Route::prefix('user')->group(function () {
-        Route::get('profile', [UserProfileController::class, 'show']);
-        Route::post('profile', [UserProfileController::class, 'store']);
-    });
-
-    // Messages
-    Route::get('messages', [MessageController::class, 'index']);
-    Route::get('check-payment', [MessageController::class, 'checkPaymentRequired']);
-    Route::post('messages', [MessageController::class, 'store']);
-    Route::get('chat-users', [MessageController::class, 'chatUsers']);
-    Route::get('users', [MessageController::class, 'allUsers']);
-    Route::post('messages/mark-read', [MessageController::class, 'markAsRead']);
-    Route::get('admin-info', [MessageController::class, 'getAdminId']);
-
-    // Admin-only routes
-    Route::middleware('admin')->group(function () {
-        // Add admin endpoints here
-    });
+    Route::get('profile',         [UserProfileController::class, 'show']);
+    Route::post('profile/update', [UserProfileController::class, 'update']);
+    Route::get('messages',              [MessageController::class, 'index']);
+    Route::get('messages/{userId}',     [MessageController::class, 'show']);
+    Route::post('messages',             [MessageController::class, 'store']);
+    Route::get('chat-users',            [MessageController::class, 'chatUsers']);
+    Route::get('users',                 [MessageController::class, 'allUsers']);
+    Route::post('messages/mark-read',   [MessageController::class, 'markAsRead']);
+    Route::get('admin-info',            [MessageController::class, 'getAdminId']);
+    Route::get('check-payment',         [MessageController::class, 'checkPayment']);
+    Route::post('users/{userId}/rashi', [MessageController::class, 'updateRashi']);
+    Route::post('typing',               [MessageController::class, 'typing']);
+    Route::post('status/online',        [MessageController::class, 'setOnline']);
+    Route::get('status/{userId}',       [MessageController::class, 'getStatus']);
 });

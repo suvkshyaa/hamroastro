@@ -2,15 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\UserProfile;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class UserProfileController extends Controller
 {
-    /**
-     * Get the authenticated user's profile
-     */
+    // ✅ Get profile directly from User model
     public function show(Request $request)
     {
         $user = $request->user();
@@ -19,34 +16,11 @@ class UserProfileController extends Controller
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        // Get or create profile
-        $profile = $user->profile;
-
-        if (!$profile) {
-            // Auto-create profile with user's registration data
-            $profile = UserProfile::create([
-                'user_id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-            ]);
-        }
-
-        return response()->json([
-            'name' => $profile->name ?? $user->name,
-            'email' => $user->email,
-            'dob_nep' => $profile->dob_nep,
-            'birth_time' => $profile->birth_time,
-            'birth_place' => $profile->birth_place,
-            'temp_address' => $profile->temp_address,
-            'phone' => $profile->phone,
-            'photo_url' => $profile->photo ? url('storage/' . $profile->photo) : null,
-        ]);
+        return response()->json($user);
     }
 
-    /**
-     * Create or update the authenticated user's profile
-     */
-    public function store(Request $request)
+    // ✅ Update profile directly on User model
+    public function update(Request $request)
     {
         $user = $request->user();
 
@@ -55,54 +29,27 @@ class UserProfileController extends Controller
         }
 
         $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'dob_nep' => 'nullable|string|max:50',
-            'birth_time' => 'nullable|string|max:50',
-            'birth_place' => 'nullable|string|max:255',
-            'temp_address' => 'nullable|string|max:500',
-            'phone' => 'nullable|string|max:20',
-            'email' => 'sometimes|email|max:255',
-            'photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'name'         => 'sometimes|string|max:255',
+            'gender'       => 'sometimes|string|max:20',
+            'dob_nep'      => 'sometimes|nullable|string|max:50',
+            'birth_time'   => 'sometimes|nullable|string|max:20',
+            'perm_country' => 'sometimes|nullable|string|max:100',
+            'perm_city'    => 'sometimes|nullable|string|max:100',
+            'perm_street'  => 'sometimes|nullable|string|max:255',
+            'temp_country' => 'sometimes|nullable|string|max:100',
+            'temp_city'    => 'sometimes|nullable|string|max:100',
+            'temp_street'  => 'sometimes|nullable|string|max:255',
         ]);
 
-        // Get or create profile
-        $profile = $user->profile;
+        // ✅ Update users table directly
+        $user->update($validated);
 
-        if (!$profile) {
-            $profile = new UserProfile(['user_id' => $user->id]);
-        }
+        Log::info("User {$user->id} ({$user->name}) updated their profile");
 
-        // Handle photo upload
-        if ($request->hasFile('photo')) {
-            // Delete old photo if exists
-            if ($profile->photo) {
-                Storage::disk('public')->delete($profile->photo);
-            }
-
-            $path = $request->file('photo')->store('profile-photos', 'public');
-            $validated['photo'] = $path;
-        }
-
-        // Update profile
-        $profile->fill($validated);
-        $profile->save();
-
-        // Also update user's name if provided
-        if (isset($validated['name'])) {
-            $user->name = $validated['name'];
-            $user->save();
-        }
-
+        // ✅ Return fresh data from DB
         return response()->json([
-            'message' => 'Profile saved successfully',
-            'name' => $profile->name ?? $user->name,
-            'email' => $user->email,
-            'dob_nep' => $profile->dob_nep,
-            'birth_time' => $profile->birth_time,
-            'birth_place' => $profile->birth_place,
-            'temp_address' => $profile->temp_address,
-            'phone' => $profile->phone,
-            'photo_url' => $profile->photo ? url('storage/' . $profile->photo) : null,
+            'message' => 'Profile updated successfully',
+            'user'    => $user->fresh()
         ]);
     }
 }

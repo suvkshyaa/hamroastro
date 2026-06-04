@@ -7,14 +7,11 @@ use Illuminate\Support\ServiceProvider;
 
 class BroadcastServiceProvider extends ServiceProvider
 {
-    /**
-     * Bootstrap any application services.
-     */
+
     public function boot(): void
     {
-        // ✅ CRITICAL: Broadcasting routes need special handling
-        // Use default middleware, Laravel will handle auth
-        Broadcast::routes();
+
+        Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
         require base_path('routes/channels.php');
     }

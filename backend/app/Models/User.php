@@ -21,6 +21,7 @@ class User extends Authenticatable
         'gender',
         'dob',
         'dob_nep',
+        'rashi',
         'birth_time',
         'birth_place',
 

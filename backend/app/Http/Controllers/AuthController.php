@@ -76,30 +76,31 @@ class AuthController extends Controller
             'password' => 'required'
         ]);
 
-        // 🔥 DETAILED DEBUG LOGGING
-        Log::info("=== LOGIN ATTEMPT START ===");
-        Log::info("Email received: [{$request->email}]");
-        Log::info("Password received: [{$request->password}]");
-        Log::info("Password length: " . strlen($request->password));
-        Log::info("Email length: " . strlen($request->email));
+
 
         // -----------------------------------------
         // ⭐ HARDCODED ADMIN LOGIN
         // -----------------------------------------
+
+        $adminEmail    = env('ADMIN_EMAIL', 'sarita123@gmail.com');
+        $adminPassword = env('ADMIN_PASSWORD', 'iamsaritaghimira');
+
         if (
-            $request->email === 'sarita123@gmail.com' &&
-            $request->password === 'iamsaritaghimira'
-        ) {
+            $request->email === $adminEmail &&
+            $request->password === $adminPassword
+        )
+
+        {
             Log::info("Admin login detected");
 
-            $admin = User::firstOrCreate(
-                ['email' => 'sarita123@gmail.com'],
-                [
-                    'name' => 'Sarita Ghimira',
-                    'password' => Hash::make('iamsaritaghimira'),
-                    'gender' => 'female',
-                    'role' => 'admin',
-                ]
+           $admin = User::firstOrCreate(
+           ['email' => $adminEmail],
+            [
+                'name'     => 'Sarita Ghimira',
+                'password' => Hash::make($adminPassword),
+                'gender'   => 'female',
+                'role'     => 'admin',
+            ]
             );
 
             // Force admin role
@@ -110,16 +111,10 @@ class AuthController extends Controller
             $token = $admin->createToken('admin_token')->plainTextToken;
 
             return response()->json([
-                'message' => 'Admin login successful',
-                'token'   => $token,
-                'user'    => [
-                    'id' => $admin->id,
-                    'name' => $admin->name,
-                    'email' => $admin->email,
-                    'gender' => $admin->gender,
-                    'role' => 'admin',
-                ],
-            ], 200);
+            'message' => 'Login successful',
+            'token'   => $token,
+            'user'    => $this->formatUser($admin),
+            ]);
         }
 
         // -----------------------------------------
@@ -132,33 +127,19 @@ class AuthController extends Controller
             return response()->json(['message' => 'Invalid login credentials'], 401);
         }
 
-        Log::info("✅ User found - ID: {$user->id}, Email: {$user->email}, Role: {$user->role}");
-        Log::info("Stored password hash: {$user->password}");
 
-        // Test password
-        $passwordMatches = Hash::check($request->password, $user->password);
-        Log::info("Password check result: " . ($passwordMatches ? 'TRUE ✅' : 'FALSE ❌'));
 
-        if (!$passwordMatches) {
-            Log::warning("❌ Password mismatch for user: {$request->email}");
-            return response()->json(['message' => 'Invalid login credentials'], 401);
+        if (!Hash::check($request->password, $user->password)) {
+        return response()->json(['message' => 'Invalid login credentials'], 401);
         }
-
-        Log::info("✅ Login successful for: {$request->email}");
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
-            'message' => 'Login successful',
-            'token'   => $token,
-            'user'    => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'gender' => $user->gender,
-                'role' => $user->role ?? 'customer',
-            ],
-        ]);
+        'message' => 'Login successful',
+        'token'   => $token,
+        'user'    => $this->formatUser($user),
+    ]);
     }
 
     // =======================
@@ -170,4 +151,24 @@ class AuthController extends Controller
 
         return response()->json(['message' => 'Logged out successfully']);
     }
+
+    private function formatUser(User $user): array
+{
+    return [
+        'id'           => $user->id,
+        'name'         => $user->name,
+        'email'        => $user->email,
+        'gender'       => $user->gender,
+        'role'         => $user->role ?? 'customer',
+        'dob_nep'      => $user->dob_nep,
+        'birth_time'   => $user->birth_time,
+        'temp_country' => $user->temp_country,
+        'temp_city'    => $user->temp_city,
+        'temp_street'  => $user->temp_street,
+        'perm_country' => $user->perm_country,
+        'perm_city'    => $user->perm_city,
+        'perm_street'  => $user->perm_street,
+        'photo'        => $user->photo ? url('storage/' . $user->photo) : null,
+    ];
+}
 }
