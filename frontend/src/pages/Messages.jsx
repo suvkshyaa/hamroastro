@@ -162,8 +162,11 @@ export default function Messages() {
             user_id: Number(data.user_id), receiver_id: Number(data.receiver_id),
             message_type: data.message_type || "normal",
             payment_status: data.payment_status || null,
-            is_paid: data.is_paid, payment_status: data.payment_status,
-            created_at: data.created_at, sender_name: data.sender_name,
+            is_paid: data.is_paid,
+            payment_status: data.payment_status,
+            transaction_id: data.transaction_id || null,
+            created_at: data.created_at,
+            sender_name: data.sender_name,
           }];
         });
       }
@@ -497,8 +500,10 @@ export default function Messages() {
                 {selectedUser.gender && <span className={textSecondary}>⚧ {selectedUser.gender}</span>}
                 {selectedUser.dob_nep && <span className={textSecondary}>📅 {new Date(selectedUser.dob_nep).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "2-digit" })}</span>}
                 {selectedUser.birth_time && <span className={textSecondary}>⏰ {(() => { const [h, m] = selectedUser.birth_time.split(":"); const hr = parseInt(h); return `${String(hr % 12 || 12).padStart(2, "0")}:${m} ${hr >= 12 ? "PM" : "AM"}`; })()}</span>}
-                {(selectedUser.perm_city || selectedUser.perm_country) && <span className={textSecondary}>📍 {[selectedUser.perm_city, selectedUser.perm_country].filter(Boolean).join(", ")}</span>}
-              </div>
+                {(selectedUser.perm_street || selectedUser.perm_city || selectedUser.perm_country) && (<span className={textSecondary}>🏠 {[selectedUser.perm_street, selectedUser.perm_city, selectedUser.perm_country].filter(Boolean).join(", ")}</span>)}
+                {(selectedUser.temp_street || selectedUser.temp_city || selectedUser.temp_country) && (<span className={textSecondary}>📍 {[selectedUser.temp_street, selectedUser.temp_city, selectedUser.temp_country].filter(Boolean).join(", ")}</span>
+              )}
+            </div>
             </div>
 
             {/* Search Bar */}
