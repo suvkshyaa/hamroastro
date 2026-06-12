@@ -22,6 +22,7 @@ class Message extends Model
         'payment_status',
         'amount',
         'paid_at',
+        'question_id',
     ];
 
     protected $casts = [

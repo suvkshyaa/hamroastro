@@ -9,458 +9,522 @@ use Illuminate\Support\Facades\Auth;
 use App\Events\MessageSent;
 use Illuminate\Support\Facades\Log;
 
-
 class MessageController extends Controller
 {
 
+    // ─────────────────────────────────────────────
+    // HELPER: Get current session start time
+    // Session resets on: new paid question OR new ⭐ answer
+    // ─────────────────────────────────────────────
+    private function getSessionStart($customerId, $adminId)
+    {
+        $lastQuestion = Message::where('user_id', $customerId)
+            ->where('receiver_id', $adminId)
+            ->where('message_type', 'question')
+            ->latest()
+            ->first();
+
+        $lastAnswer = Message::where('user_id', $adminId)
+            ->where('receiver_id', $customerId)
+            ->where('message_type', 'answer')
+            ->latest()
+            ->first();
+
+        if ($lastQuestion && $lastAnswer) {
+            return $lastQuestion->created_at->gt($lastAnswer->created_at)
+                ? $lastQuestion->created_at
+                : $lastAnswer->created_at;
+        }
+
+        if ($lastQuestion) return $lastQuestion->created_at;
+        if ($lastAnswer)   return $lastAnswer->created_at;
+
+        return null; // welcome session — no question or answer yet
+    }
+
+    // ─────────────────────────────────────────────
+    // HELPER: Count normal messages sent after session start
+    // ─────────────────────────────────────────────
+    private function countNormalInSession($senderId, $receiverId, $sessionStart)
+    {
+        $query = Message::where('user_id', $senderId)
+            ->where('receiver_id', $receiverId)
+            ->where('message_type', 'normal');
+
+        if ($sessionStart) {
+            $query->where('created_at', '>', $sessionStart);
+        }
+
+        return $query->count();
+    }
+
+
+    // ─────────────────────────────────────────────
+    // GET /messages  (index — query-string based)
+    // ─────────────────────────────────────────────
     public function index(Request $request)
     {
         $user = $request->user();
-
-        if (!$user) {
-            return response()->json(['message' => 'Unauthenticated.'], 401);
-        }
+        if (!$user) return response()->json(['message' => 'Unauthenticated.'], 401);
 
         $otherUserId = $request->query('receiver_id') ?? $request->query('user_id');
+        if (!$otherUserId) return response()->json(['message' => 'user_id or receiver_id is required'], 400);
 
-        if (!$otherUserId) {
-            return response()->json(['message' => 'user_id or receiver_id is required'], 400);
-        }
-
-        Log::info("Fetching messages between User {$user->id} and User {$otherUserId}");
-
-        // Get all messages between these two users (bidirectional)
-        $messages = Message::where(function($query) use ($user, $otherUserId) {
-            $query->where('user_id', $user->id)
-                  ->where('receiver_id', $otherUserId);
+        $messages = Message::where(function ($q) use ($user, $otherUserId) {
+            $q->where('user_id', $user->id)->where('receiver_id', $otherUserId);
+        })->orWhere(function ($q) use ($user, $otherUserId) {
+            $q->where('user_id', $otherUserId)->where('receiver_id', $user->id);
         })
-        ->orWhere(function($query) use ($user, $otherUserId) {
-            $query->where('user_id', $otherUserId)
-                  ->where('receiver_id', $user->id);
-        })
-        ->with('user:id,name') // Eager load sender info
-        ->orderBy('created_at', 'asc')
-        ->get()
-        ->map(function($message) {
-            return [
-                'id' => $message->id,
-                'text' => $message->text,
-                'user_id' => $message->user_id,
-                'receiver_id' => $message->receiver_id,
-                'message_type' => $message->message_type ?? 'normal',
-                'is_paid' => $message->is_paid ?? false,
-                'payment_status' => $message->payment_status,
-                'created_at' => $message->created_at->toISOString(),
-                'updated_at' => $message->updated_at->toISOString(),
-                'sender_name' => $message->user->name ?? 'Unknown',
-            ];
-        });
+            ->with('user:id,name')
+            ->orderBy('created_at', 'asc')
+            ->get()
+            ->map(fn($m) => $this->formatMessage($m));
 
         return response()->json($messages);
     }
 
 
+    // ─────────────────────────────────────────────
+    // GET /messages/{userId}  (show)
+    // ─────────────────────────────────────────────
+    public function show(Request $request, $userId)
+    {
+        $user = $request->user();
+        if (!$user) return response()->json(['message' => 'Unauthenticated.'], 401);
 
-
-public function updateRashi(Request $request, $userId)
-{
-    $user = $request->user();
-
-    // Only admin can update rashi
-    if ($user->role !== 'admin') {
-        return response()->json(['error' => 'Unauthorized'], 403);
-    }
-
-    $validated = $request->validate([
-        'rashi' => 'required|string|max:100',
-    ]);
-
-    $customer = User::findOrFail($userId);
-    $customer->rashi = $validated['rashi'];
-    $customer->save();
-
-    Log::info("Admin updated rashi for User {$userId}: {$validated['rashi']}");
-
-    return response()->json([
-        'message' => 'Rashi updated successfully',
-        'rashi' => $customer->rashi
-    ]);
-}
-
-
-
-
-public function show(Request $request, $userId)
-{
-    $user = $request->user();
-
-    if (!$user) {
-        return response()->json(['message' => 'Unauthenticated.'], 401);
-    }
-
-    Log::info("Fetching messages between User {$user->id} and User {$userId}");
-
-    $messages = Message::where(function($query) use ($user, $userId) {
-            $query->where('user_id', $user->id)
-                  ->where('receiver_id', $userId);
+        $messages = Message::where(function ($q) use ($user, $userId) {
+            $q->where('user_id', $user->id)->where('receiver_id', $userId);
+        })->orWhere(function ($q) use ($user, $userId) {
+            $q->where('user_id', $userId)->where('receiver_id', $user->id);
         })
-        ->orWhere(function($query) use ($user, $userId) {
-            $query->where('user_id', $userId)
-                  ->where('receiver_id', $user->id);
-        })
-        ->with('user:id,name')
-        ->orderBy('created_at', 'asc')
-        ->get()
-        ->map(function($message) {
-            return [
-                'id'             => $message->id,
-                'text'           => $message->text,
-                'user_id'        => $message->user_id,
-                'receiver_id'    => $message->receiver_id,
-                'message_type'   => $message->message_type ?? 'normal',
-                'is_paid'        => $message->is_paid ?? false,
-                'payment_status' => $message->payment_status,
-                'created_at'     => $message->created_at->toISOString(),
-                'updated_at'     => $message->updated_at->toISOString(),
-                'sender_name'    => $message->user->name ?? 'Unknown',
-            ];
-        });
+            ->with('user:id,name')
+            ->orderBy('created_at', 'asc')
+            ->get()
+            ->map(fn($m) => $this->formatMessage($m));
 
-    return response()->json($messages);
-}
-
-public function store(Request $request)
-{
-    $validated = $request->validate([
-        'text' => 'required|string|max:5000',
-        'receiver_id' => 'required|exists:users,id',
-        'transaction_id' => 'nullable|string',
-        'message_type' => 'required|in:normal,question,answer',
-    ]);
-
-    $user = $request->user();
-
-    if (!$user) {
-        return response()->json(['error' => 'Unauthenticated'], 401);
+        return response()->json($messages);
     }
 
-    $messageType = $validated['message_type'];
 
-    Log::info("User {$user->id} ({$user->role}) sending {$messageType} message to User {$validated['receiver_id']}");
+    // ─────────────────────────────────────────────
+    // POST /messages  (store)
+    // ─────────────────────────────────────────────
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'text'           => 'required|string|max:5000',
+            'receiver_id'    => 'required|exists:users,id',
+            'transaction_id' => 'nullable|string',
+            'message_type'   => 'required|in:normal,question,answer',
+            'question_id'    => 'nullable|integer',
+        ]);
 
+        $user = $request->user();
+        if (!$user) return response()->json(['error' => 'Unauthenticated'], 401);
 
-    $requiresPayment = false;
-    $isPaid = false;
-    $paymentStatus = 'free';
-    $amount = 0;
+        $messageType = $validated['message_type'];
+        $receiverId  = $validated['receiver_id'];
 
+        // ══════════════════════════════════════════
+        // CUSTOMER: normal message limit
+        // ══════════════════════════════════════════
+        if ($messageType === 'normal' && $user->role === 'customer') {
 
-    if ($messageType === 'question' && $user->role !== 'admin') {
-        $requiresPayment = true;
+            $sessionStart = $this->getSessionStart($user->id, $receiverId);
 
-        // Check if transaction ID was provided
-        if (!empty($validated['transaction_id'])) {
-            // Payment was made
-            $isPaid = true;
-            $paymentStatus = 'paid';
-            $amount = 20.00;
-
-            // Verify transaction ID is not already used
-            $existingTransaction = Message::where('transaction_id', $validated['transaction_id'])->first();
-
-            if ($existingTransaction) {
-                Log::warning("Transaction ID already used: {$validated['transaction_id']}");
-                return response()->json([
-                    'error' => 'यो Transaction ID पहिले नै प्रयोग भइसकेको छ। कृपया फेरि प्रयास गर्नुहोस्।',
-                    'requires_payment' => true
-                ], 400);
+            if ($sessionStart === null) {
+                // ── Welcome session (no question/answer yet) ──
+                $freeUsed = $user->free_messages_used ?? 0;
+                if ($freeUsed >= 3) {
+                    return response()->json([
+                        'error'        => 'You have used all 3 free welcome messages. Please ask a paid question to continue.',
+                        'limit_reached' => true,
+                        'limit_type'   => 'welcome',
+                    ], 403);
+                }
+                $user->free_messages_used = $freeUsed + 1;
+                $user->save();
+            } else {
+                // ── Active session (after question or after answer) ──
+                $used = $this->countNormalInSession($user->id, $receiverId, $sessionStart);
+                if ($used >= 3) {
+                    return response()->json([
+                        'error'        => 'You have used all 3 free messages for this session. Please ask a new paid question.',
+                        'limit_reached' => true,
+                        'limit_type'   => 'session',
+                    ], 403);
+                }
             }
-        } else {
-            // ✅ FIXED: Payment required but not provided
-            $isPaid = false;  // ✅ Changed from true to false
-            $paymentStatus = 'pending';
-            $amount = 20.00;
-
-            Log::warning("Question requires payment but no transaction_id provided");
-            return response()->json([
-                'error' => 'Payment required for questions',
-                'requires_payment' => true,
-                'amount' => 20.00
-            ], 402); // 402 Payment Required
         }
+
+        // ══════════════════════════════════════════
+        // ADMIN: normal message limit
+        // ══════════════════════════════════════════
+        if ($messageType === 'normal' && $user->role === 'admin') {
+            $customerId   = $receiverId;
+            $sessionStart = $this->getSessionStart($customerId, $user->id);
+
+            if ($sessionStart !== null) {
+                $used = $this->countNormalInSession($user->id, $customerId, $sessionStart);
+                if ($used >= 3) {
+                    return response()->json([
+                        'error'        => 'You have used all 3 clarification messages for this session. Please send the ⭐ Answer now.',
+                        'limit_reached' => true,
+                        'limit_type'   => 'admin_session',
+                    ], 403);
+                }
+            }
+            // If no session yet → admin is in welcome session → 3 free, no hard limit enforced
+        }
+
+        // ══════════════════════════════════════════
+        // PAYMENT: questions require transaction ID
+        // ══════════════════════════════════════════
+        $isPaid        = false;
+        $paymentStatus = 'free';
+        $amount        = 0;
+
+        if ($messageType === 'question' && $user->role !== 'admin') {
+            if (!empty($validated['transaction_id'])) {
+                $existing = Message::where('transaction_id', $validated['transaction_id'])->first();
+                if ($existing) {
+                    return response()->json([
+                        'error'            => 'यो Transaction ID पहिले नै प्रयोग भइसकेको छ।',
+                        'requires_payment' => true,
+                    ], 400);
+                }
+                $isPaid        = true;
+                $paymentStatus = 'paid';
+                $amount        = 20.00;
+            } else {
+                return response()->json([
+                    'error'            => 'Payment required for questions',
+                    'requires_payment' => true,
+                    'amount'           => 20.00,
+                ], 402);
+            }
+        }
+
+        // ══════════════════════════════════════════
+        // CREATE MESSAGE
+        // ══════════════════════════════════════════
+        $message = Message::create([
+            'user_id'        => $user->id,
+            'receiver_id'    => $receiverId,
+            'text'           => $validated['text'],
+            'message_type'   => $messageType,
+            'question_id'    => $validated['question_id'] ?? null,
+            'is_paid'        => $isPaid,
+            'payment_status' => $paymentStatus,
+            'amount'         => $amount,
+            'transaction_id' => $validated['transaction_id'] ?? null,
+            'paid_at'        => $isPaid ? now() : null,
+        ]);
+
+        $message->load('user:id,name');
+
+        try {
+            broadcast(new MessageSent($message));
+        } catch (\Exception $e) {
+            Log::error("Broadcast failed: " . $e->getMessage());
+        }
+
+        return response()->json([
+            'id'             => $message->id,
+            'text'           => $message->text,
+            'user_id'        => $message->user_id,
+            'receiver_id'    => $message->receiver_id,
+            'is_read'        => $message->is_read ?? false,
+            'message_type'   => $message->message_type,
+            'question_id'    => $message->question_id,
+            'is_paid'        => $message->is_paid,
+            'payment_status' => $message->payment_status,
+            'transaction_id' => $message->transaction_id,
+            'amount'         => $message->amount,
+            'created_at'     => $message->created_at->toISOString(),
+            'sender_name'    => $message->user->name ?? 'Unknown',
+        ], 201);
     }
 
-    Log::info("Payment Status - Required: " . ($requiresPayment ? 'YES' : 'NO') .
-              " | Paid: " . ($isPaid ? 'YES' : 'NO') .
-              " | Status: {$paymentStatus} | Type: {$messageType}");
 
-    // Create message with payment info
-    $messageData = [
-        'user_id' => $user->id,
-        'receiver_id' => $validated['receiver_id'],
-        'text' => $validated['text'],
-        'message_type' => $messageType,
-        'is_paid' => $isPaid,
-        'payment_status' => $paymentStatus,
-        'amount' => $amount,
-        'transaction_id' => $validated['transaction_id'] ?? null,
-        'paid_at' => ($isPaid && $paymentStatus === 'paid') ? now() : null,
-    ];
+    // ─────────────────────────────────────────────
+    // GET /messages/free-status
+    // Returns remaining normal messages for current session
+    // ─────────────────────────────────────────────
+    public function getFreeMessageStatus(Request $request)
+    {
+        $user    = $request->user();
+        $adminId = $request->query('admin_id') ?? 1;
 
-    $message = Message::create($messageData);
+        $sessionStart = $this->getSessionStart($user->id, $adminId);
 
-    // Load sender relationship
-    $message->load('user:id,name');
+        if ($sessionStart === null) {
+            // Welcome session
+            $globalUsed       = $user->free_messages_used ?? 0;
+            $sessionRemaining = max(0, 3 - $globalUsed);
+            $sessionType      = 'welcome';
+        } else {
+            $used             = $this->countNormalInSession($user->id, $adminId, $sessionStart);
+            $sessionRemaining = max(0, 3 - $used);
+            $sessionType      = 'active';
+        }
 
-    // Broadcast to real-time channel
-    try {
-        broadcast(new MessageSent($message));
-        Log::info("Message {$message->id} broadcast successfully");
-    } catch (\Exception $e) {
-        Log::error("Broadcast failed: " . $e->getMessage());
+        // Last question and last answer for the frontend to track
+        $lastQuestion = Message::where('user_id', $user->id)
+            ->where('receiver_id', $adminId)
+            ->where('message_type', 'question')
+            ->latest()->first();
+
+        $lastAnswer = Message::where('user_id', $adminId)
+            ->where('receiver_id', $user->id)
+            ->where('message_type', 'answer')
+            ->latest()->first();
+
+        return response()->json([
+            'session_remaining'    => $sessionRemaining,
+            'session_type'         => $sessionType,
+            // kept for backward compat with existing frontend code
+            'global_remaining'     => $sessionRemaining,
+            'per_question_remaining' => $sessionRemaining,
+            'global_used'          => $user->free_messages_used ?? 0,
+            'last_question_id'     => $lastQuestion?->id,
+            'last_answer_id'       => $lastAnswer?->id,
+            'has_paid_question'    => $lastQuestion !== null,
+        ]);
     }
 
-    // Return formatted response
-    return response()->json([
-        'id' => $message->id,
-        'text' => $message->text,
-        'user_id' => $message->user_id,
-        'receiver_id' => $message->receiver_id,
-        'is_read'        => $message->is_read ?? false,
-        'message_type' => $message->message_type,
-        'is_paid' => $message->is_paid,
-        'payment_status' => $message->payment_status,
-        'transaction_id' => $message->transaction_id,
-        'amount' => $message->amount,
-        'created_at' => $message->created_at->toISOString(),
-        'updated_at' => $message->updated_at->toISOString(),
-        'sender_name' => $message->user->name ?? 'Unknown',
-    ], 201);
-}
-public function chatUsers(Request $request)
+
+    // ─────────────────────────────────────────────
+    // GET /chat-users  (admin sidebar)
+    // ─────────────────────────────────────────────
+    public function chatUsers(Request $request)
     {
         $currentUser = $request->user();
+        if (!$currentUser) return response()->json(['message' => 'Unauthenticated.'], 401);
 
-        if (!$currentUser) {
-            return response()->json(['message' => 'Unauthenticated.'], 401);
-        }
-
-        Log::info("Fetching chat users for User {$currentUser->id}");
-
-        // Get ALL customers (not just those with messages)
         $users = User::where('id', '!=', $currentUser->id)
-            ->where('role', 'customer') // Only show customers
+            ->where('role', 'customer')
             ->get()
-            ->map(function($user) use ($currentUser) {
-                // Get last message between current user and this customer
-                $lastMessage = Message::where(function($query) use ($currentUser, $user) {
-                    $query->where('user_id', $currentUser->id)
-                          ->where('receiver_id', $user->id);
-                })
-                ->orWhere(function($query) use ($currentUser, $user) {
-                    $query->where('user_id', $user->id)
-                          ->where('receiver_id', $currentUser->id);
-                })
-                ->latest()
-                ->first();
+            ->map(function ($user) use ($currentUser) {
+                $lastMessage = Message::where(function ($q) use ($currentUser, $user) {
+                    $q->where('user_id', $currentUser->id)->where('receiver_id', $user->id);
+                })->orWhere(function ($q) use ($currentUser, $user) {
+                    $q->where('user_id', $user->id)->where('receiver_id', $currentUser->id);
+                })->latest()->first();
 
-                // Count unread messages from this customer to admin
                 $unreadCount = Message::where('user_id', $user->id)
                     ->where('receiver_id', $currentUser->id)
                     ->where('is_read', false)
                     ->count();
 
                 return [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-
-                    // Personal Information
-                    'gender' => $user->gender ?? null,
-                    'dob' => $user->dob ?? null,
-                    'dob_nep' => $user->dob_nep ?? null,
-                    'birth_time' => $user->birth_time ?? null,
-                    'birth_place' => $user->birth_place ?? null,
-                    'birth_city' => $user->birth_city ?? null,
+                    'id'           => $user->id,
+                    'name'         => $user->name,
+                    'email'        => $user->email,
+                    'gender'       => $user->gender ?? null,
+                    'dob'          => $user->dob ?? null,
+                    'dob_nep'      => $user->dob_nep ?? null,
+                    'birth_time'   => $user->birth_time ?? null,
+                    'birth_place'  => $user->birth_place ?? null,
+                    'birth_city'   => $user->birth_city ?? null,
                     'birth_country' => $user->birth_country ?? null,
-
-                    // Temporary Address
                     'temp_country' => $user->temp_country ?? null,
-                    'temp_city' => $user->temp_city ?? null,
-                    'temp_street' => $user->temp_street ?? null,
+                    'temp_city'    => $user->temp_city ?? null,
+                    'temp_street'  => $user->temp_street ?? null,
                     'temp_address' => $user->temp_address ?? null,
-
-                    // Permanent Address
                     'perm_country' => $user->perm_country ?? null,
-                    'perm_city' => $user->perm_city ?? null,
-                    'perm_street' => $user->perm_street ?? null,
+                    'perm_city'    => $user->perm_city ?? null,
+                    'perm_street'  => $user->perm_street ?? null,
                     'perm_address' => $user->perm_address ?? null,
-
                     'unread_count' => $unreadCount,
                     'last_message' => $lastMessage ? [
-                        'id' => $lastMessage->id,
-                        'text' => $lastMessage->text,
-                        'user_id' => $lastMessage->user_id,
+                        'id'          => $lastMessage->id,
+                        'text'        => $lastMessage->text,
+                        'user_id'     => $lastMessage->user_id,
                         'receiver_id' => $lastMessage->receiver_id,
-                        'created_at' => $lastMessage->created_at->toISOString(),
+                        'created_at'  => $lastMessage->created_at->toISOString(),
                     ] : null,
                 ];
             })
-            ->sortByDesc(function($user) {
-                // Sort by last message time, customers without messages go to bottom
-                return $user['last_message']['created_at'] ?? '1970-01-01';
-            })
+            ->sortByDesc(fn($u) => $u['last_message']['created_at'] ?? '1970-01-01')
             ->values();
-
-        Log::info("Returning {$users->count()} chat users");
 
         return response()->json($users);
     }
 
 
-
-
-    /**
-     * Get all users (for starting new conversations)
-     */
+    // ─────────────────────────────────────────────
+    // GET /users  (all users)
+    // ─────────────────────────────────────────────
     public function allUsers(Request $request)
     {
         $currentUser = $request->user();
-
-        if (!$currentUser) {
-            return response()->json(['message' => 'Unauthenticated.'], 401);
-        }
+        if (!$currentUser) return response()->json(['message' => 'Unauthenticated.'], 401);
 
         $users = User::where('id', '!=', $currentUser->id)
-            ->select(
-                'id',
-                'name',
-                'email',
-                'dob_nep',
-                'birth_time',
-                'birth_place',
-                'temp_address'
-            )
+            ->select('id', 'name', 'email', 'dob_nep', 'birth_time', 'birth_place', 'temp_address')
             ->get();
 
         return response()->json($users);
     }
 
 
-public function markAsRead(Request $request)
-{
-    $user = $request->user();
-    $senderId = $request->input('sender_id');
+    // ─────────────────────────────────────────────
+    // POST /messages/mark-read
+    // ─────────────────────────────────────────────
+    public function markAsRead(Request $request)
+    {
+        $user     = $request->user();
+        $senderId = $request->input('sender_id');
 
-    Message::where('user_id', $senderId)
-        ->where('receiver_id', $user->id)
-        ->where('is_read', false)
-        ->update(['is_read' => true]);
+        Message::where('user_id', $senderId)
+            ->where('receiver_id', $user->id)
+            ->where('is_read', false)
+            ->update(['is_read' => true]);
 
-    Log::info("User {$user->id} marked messages from {$senderId} as read");
-
-    return response()->json(['message' => 'Messages marked as read']);
-}
+        return response()->json(['message' => 'Messages marked as read']);
+    }
 
 
-
-
+    // ─────────────────────────────────────────────
+    // GET /check-payment
+    // ─────────────────────────────────────────────
     public function checkPayment(Request $request)
     {
-        $user = $request->user();
-        $receiverId = $request->query('receiver_id');
+        $user        = $request->user();
+        $receiverId  = $request->query('receiver_id');
         $messageType = $request->query('message_type', 'normal');
 
-        if (!$user || !$receiverId) {
-            return response()->json(['error' => 'Invalid request'], 400);
-        }
+        if (!$user || !$receiverId) return response()->json(['error' => 'Invalid request'], 400);
 
-        // ✅ Admin never needs to pay
         if ($user->role === 'admin') {
-            Log::info("Admin user {$user->id} - no payment required");
-            return response()->json([
-                'requires_payment' => false,
-                'message_type' => $messageType,
-                'amount' => 0,
-            ]);
+            return response()->json(['requires_payment' => false, 'message_type' => $messageType, 'amount' => 0]);
         }
 
-        // ✅ Only "question" type requires payment
         $requiresPayment = ($messageType === 'question');
-
-        Log::info("User {$user->id} message type: {$messageType}. Requires payment: " . ($requiresPayment ? 'YES' : 'NO'));
 
         return response()->json([
             'requires_payment' => $requiresPayment,
-            'message_type' => $messageType,
-            'amount' => $requiresPayment ? 20.00 : 0,
+            'message_type'     => $messageType,
+            'amount'           => $requiresPayment ? 20.00 : 0,
         ]);
     }
 
 
-
-     public function getAdminId()
+    // ─────────────────────────────────────────────
+    // GET /admin-info
+    // ─────────────────────────────────────────────
+    public function getAdminId()
     {
-        // Get the first admin user
         $admin = User::where('role', 'admin')->first();
+        if (!$admin) return response()->json(['error' => 'No admin available'], 404);
 
-        if (!$admin) {
-            Log::error("No admin user found in database");
-            return response()->json(['error' => 'No admin available'], 404);
+        return response()->json(['admin_id' => $admin->id, 'admin_name' => $admin->name]);
+    }
+
+
+    // ─────────────────────────────────────────────
+    // POST /typing
+    // ─────────────────────────────────────────────
+    public function typing(Request $request)
+    {
+        $user       = $request->user();
+        $receiverId = $request->input('receiver_id');
+        if (!$receiverId) return response()->json(['error' => 'receiver_id required'], 400);
+
+        broadcast(new \App\Events\UserTyping($user->id, $receiverId, $user->name));
+
+        return response()->json(['message' => 'Typing event sent']);
+    }
+
+
+    // ─────────────────────────────────────────────
+    // POST /status/online
+    // ─────────────────────────────────────────────
+    public function setOnline(Request $request)
+    {
+        $user = $request->user();
+        cache()->put("user_online_{$user->id}", true, now()->addSeconds(60));
+        return response()->json(['status' => 'online']);
+    }
+
+
+    // ─────────────────────────────────────────────
+    // GET /status/{userId}
+    // ─────────────────────────────────────────────
+    public function getStatus(Request $request, $userId)
+    {
+        return response()->json([
+            'user_id'   => $userId,
+            'is_online' => cache()->has("user_online_{$userId}"),
+        ]);
+    }
+
+
+    // ─────────────────────────────────────────────
+    // POST /messages/{messageId}/payment  (admin marks payment)
+    // ─────────────────────────────────────────────
+    public function markPayment(Request $request, $messageId)
+    {
+        $user = $request->user();
+        if ($user->role !== 'admin') return response()->json(['error' => 'Unauthorized'], 403);
+
+        $validated = $request->validate(['payment_status' => 'required|in:paid,rejected']);
+        $message   = Message::findOrFail($messageId);
+
+        if ($message->message_type !== 'question') {
+            return response()->json(['error' => 'Only questions can be marked'], 400);
         }
 
-        Log::info("Returning admin ID: {$admin->id} (Name: {$admin->name}) for customer messaging");
+        $message->payment_status = $validated['payment_status'];
+        $message->is_paid        = $validated['payment_status'] === 'paid';
+        $message->paid_at        = $validated['payment_status'] === 'paid' ? now() : null;
+        $message->save();
 
         return response()->json([
-            'admin_id' => $admin->id,
-            'admin_name' => $admin->name,
+            'id'             => $message->id,
+            'payment_status' => $message->payment_status,
+            'is_paid'        => $message->is_paid,
         ]);
     }
 
 
-    public function typing(Request $request)
-{
-    $user = $request->user();
-    $receiverId = $request->input('receiver_id');
+    // ─────────────────────────────────────────────
+    // POST /users/{userId}/rashi  (admin sets rashi)
+    // ─────────────────────────────────────────────
+    public function updateRashi(Request $request, $userId)
+    {
+        $user = $request->user();
+        if ($user->role !== 'admin') return response()->json(['error' => 'Unauthorized'], 403);
 
-    if (!$receiverId) {
-        return response()->json(['error' => 'receiver_id required'], 400);
+        $validated = $request->validate(['rashi' => 'required|string|max:100']);
+        $customer  = User::findOrFail($userId);
+        $customer->rashi = $validated['rashi'];
+        $customer->save();
+
+        return response()->json(['message' => 'Rashi updated successfully', 'rashi' => $customer->rashi]);
     }
 
-    // ✅ Broadcast typing event to receiver
-    broadcast(new \App\Events\UserTyping(
-        $user->id,
-        $receiverId,
-        $user->name
-    ));
 
-    return response()->json(['message' => 'Typing event sent']);
-}
-
-    // ✅ Set user as online (called every 30 seconds)
-public function setOnline(Request $request)
-{
-    $user = $request->user();
-
-    // Store in cache for 60 seconds
-    // If no ping in 60 seconds → user is offline
-    cache()->put("user_online_{$user->id}", true, now()->addSeconds(60));
-
-    return response()->json(['status' => 'online']);
-}
-
-// ✅ Get user's online status
-public function getStatus(Request $request, $userId)
-{
-    $isOnline = cache()->has("user_online_{$userId}");
-
-    return response()->json([
-        'user_id' => $userId,
-        'is_online' => $isOnline,
-    ]);
-}
-
-
-
-
+    // ─────────────────────────────────────────────
+    // PRIVATE: format a message for API response
+    // ─────────────────────────────────────────────
+    private function formatMessage($message)
+    {
+        return [
+            'id'             => $message->id,
+            'text'           => $message->text,
+            'user_id'        => $message->user_id,
+            'receiver_id'    => $message->receiver_id,
+            'message_type'   => $message->message_type ?? 'normal',
+            'question_id'    => $message->question_id ?? null,
+            'is_paid'        => $message->is_paid ?? false,
+            'payment_status' => $message->payment_status,
+            'transaction_id' => $message->transaction_id ?? null,
+            'is_read'        => $message->is_read ?? false,
+            'created_at'     => $message->created_at->toISOString(),
+            'updated_at'     => $message->updated_at->toISOString(),
+            'sender_name'    => $message->user->name ?? 'Unknown',
+        ];
+    }
 }

@@ -43,6 +43,11 @@ export default function Messages() {
   const { isDark, toggleTheme } = useTheme();
   const { playSound, playOutgoingSound, toggleMute } = useMessageSound();
 
+  // ── Session state for admin ──
+  // sessionRemaining = free normal messages left in current session
+  // Resets to 3 when: new question arrives OR admin sends ⭐ Answer
+  const [sessionRemaining, setSessionRemaining] = useState(3);
+
   useOnlineStatus();
 
   const rashiList = [
@@ -69,17 +74,57 @@ export default function Messages() {
     const days = Math.floor((now - date) / (1000 * 60 * 60 * 24));
     const timeStr = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
     if (days === 0) return timeStr;
-    if (days === 1) return `Yesterday`;
+    if (days === 1) return "Yesterday";
     if (days < 7) return date.toLocaleDateString("en-US", { weekday: "short" });
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
+  // ── Compute session remaining from messages list ──
+  // Session boundary = most recent (question from customer) OR (answer from admin)
+  const computeSessionRemaining = (msgList, adminId) => {
+    if (!msgList || msgList.length === 0) return 3;
+
+    // Find last question from customer
+    const lastQuestion = [...msgList].reverse().find(
+      m => m.message_type === 'question' && Number(m.user_id) !== Number(adminId)
+    );
+    // Find last answer from admin
+    const lastAnswer = [...msgList].reverse().find(
+      m => m.message_type === 'answer' && Number(m.user_id) === Number(adminId)
+    );
+
+    let sessionStart = null;
+    if (lastQuestion && lastAnswer) {
+      const qTime = new Date(lastQuestion.created_at);
+      const aTime = new Date(lastAnswer.created_at);
+      sessionStart = qTime > aTime ? lastQuestion.created_at : lastAnswer.created_at;
+    } else if (lastQuestion) {
+      sessionStart = lastQuestion.created_at;
+    } else if (lastAnswer) {
+      sessionStart = lastAnswer.created_at;
+    }
+
+    if (!sessionStart) return 3; // no session yet — welcome, 3 free
+
+    // Count admin normal messages sent AFTER session start
+    const sessionStartTime = new Date(sessionStart);
+    const normalsSent = msgList.filter(m =>
+      m.message_type === 'normal' &&
+      Number(m.user_id) === Number(adminId) &&
+      new Date(m.created_at) > sessionStartTime
+    ).length;
+
+    return Math.max(0, 3 - normalsSent);
+  };
+
+  // ── Auth check ──
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem("user"));
     if (!user || user.role !== "admin") { navigate("/login"); return; }
     setCurrentUser(user);
   }, [navigate]);
 
+  // ── Visibility change ──
   useEffect(() => {
     if (!currentUser?.id) return;
     const handleVisibilityChange = () => {
@@ -94,6 +139,7 @@ export default function Messages() {
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
+  // ── Fetch chat users ──
   useEffect(() => {
     if (!currentUser) return;
     const fetchChatUsers = async () => {
@@ -112,6 +158,7 @@ export default function Messages() {
     fetchChatUsers();
   }, [currentUser, navigate]);
 
+  // ── Online status polling ──
   useEffect(() => {
     if (chatUsers.length === 0) return;
     const checkAllStatus = async () => {
@@ -126,6 +173,7 @@ export default function Messages() {
     return () => clearInterval(interval);
   }, [chatUsers]);
 
+  // ── Auto-select user from URL ──
   useEffect(() => {
     if (!userId || chatUsers.length === 0) return;
     if (autoSelectedRef.current === userId) return;
@@ -139,14 +187,17 @@ export default function Messages() {
     }
   }, [userId, chatUsers]);
 
+  // ── Real-time messages ──
   useEffect(() => {
     if (!currentUser?.id) return;
     const channelName = `chat.${currentUser.id}`;
     const channel = echo.private(channelName);
 
     const handleIncomingMessage = (data) => {
-      const adminId = currentUser.id;
-      const otherUserId = Number(data.user_id) === Number(adminId) ? Number(data.receiver_id) : Number(data.user_id);
+      const adminId     = currentUser.id;
+      const otherUserId = Number(data.user_id) === Number(adminId)
+        ? Number(data.receiver_id)
+        : Number(data.user_id);
 
       if (sentMessageIds.current.has(data.id)) {
         sentMessageIds.current.delete(data.id);
@@ -157,20 +208,33 @@ export default function Messages() {
         setMessages((prev) => {
           if (prev.some((m) => m.id === data.id)) return prev;
           playSound();
-          return [...prev, {
+
+          const newMsg = {
             id: data.id, text: data.text || data.message,
             user_id: Number(data.user_id), receiver_id: Number(data.receiver_id),
             message_type: data.message_type || "normal",
             payment_status: data.payment_status || null,
             is_paid: data.is_paid,
-            payment_status: data.payment_status,
             transaction_id: data.transaction_id || null,
             created_at: data.created_at,
             sender_name: data.sender_name,
-          }];
+          };
+
+          const updated = [...prev, newMsg];
+
+          // ── SESSION RESET: new question arrived from customer ──
+          if (data.message_type === 'question' && Number(data.user_id) !== Number(adminId)) {
+            setSessionRemaining(3);
+          } else {
+            // Recompute from updated list
+            setSessionRemaining(computeSessionRemaining(updated, adminId));
+          }
+
+          return updated;
         });
       }
 
+      // Mark admin's sent messages as read
       if (Number(data.user_id) !== Number(adminId)) {
         setMessages((prev) => prev.map((m) =>
           Number(m.user_id) === Number(adminId) && Number(m.receiver_id) === Number(data.user_id)
@@ -181,9 +245,19 @@ export default function Messages() {
       setChatUsers((prevUsers) => {
         const updated = prevUsers.map((u) => {
           if (Number(u.id) === Number(otherUserId)) {
-            const newUnread = Number(selectedUserRef.current?.id) === Number(u.id) ? 0 : (u.unread_count || 0) + 1;
+            const newUnread = Number(selectedUserRef.current?.id) === Number(u.id)
+              ? 0
+              : (u.unread_count || 0) + 1;
             if (document.hidden && newUnread > 0) setUnreadCount(newUnread);
-            return { ...u, last_message: { id: data.id, text: data.text || data.message, user_id: data.user_id, receiver_id: data.receiver_id, created_at: data.created_at }, unread_count: newUnread };
+            return {
+              ...u,
+              last_message: {
+                id: data.id, text: data.text || data.message,
+                user_id: data.user_id, receiver_id: data.receiver_id,
+                created_at: data.created_at,
+              },
+              unread_count: newUnread,
+            };
           }
           return u;
         });
@@ -207,6 +281,7 @@ export default function Messages() {
     return () => { channel.stopListening(".MessageSent", handleIncomingMessage); echo.leave(channelName); };
   }, [currentUser]);
 
+  // ── WebSocket health check ──
   useEffect(() => {
     if (!currentUser?.id) return;
     const healthCheck = setInterval(() => {
@@ -216,12 +291,22 @@ export default function Messages() {
     return () => clearInterval(healthCheck);
   }, [currentUser]);
 
+  // ── Fetch messages for selected user ──
   const fetchMessages = async (uid) => {
     setLoading(true);
     try {
       const response = await API.get(`/messages/${uid}`);
-      setMessages((response.data || []).map((msg) => ({ ...msg, user_id: Number(msg.user_id), receiver_id: Number(msg.receiver_id) })));
+      const msgs = (response.data || []).map((msg) => ({
+        ...msg,
+        user_id: Number(msg.user_id),
+        receiver_id: Number(msg.receiver_id),
+      }));
+      setMessages(msgs);
       setChatUsers((prev) => prev.map((u) => u.id === uid ? { ...u, unread_count: 0 } : u));
+
+      // Compute session from loaded messages
+      const adminUser = JSON.parse(localStorage.getItem("user"));
+      if (adminUser) setSessionRemaining(computeSessionRemaining(msgs, adminUser.id));
     } catch (error) { console.error("Error fetching messages:", error); }
     finally { setLoading(false); }
   };
@@ -235,6 +320,7 @@ export default function Messages() {
     selectedUserRef.current = user;
     setSelectedUser(user);
     setSelectedRashi(user.rashi || "");
+    setSessionRemaining(3); // reset optimistically, fetchMessages will correct it
     fetchMessages(user.id);
     navigate(`/messages/${user.id}`);
     clearNotification();
@@ -243,27 +329,84 @@ export default function Messages() {
       .catch(() => {});
   };
 
+  const handleMarkPayment = async (messageId, status) => {
+    try {
+      await API.post(`/messages/${messageId}/payment`, { payment_status: status });
+      setMessages((prev) => prev.map((msg) =>
+        msg.id === messageId
+          ? { ...msg, payment_status: status, is_paid: status === 'paid' }
+          : msg
+      ));
+    } catch (err) {
+      console.error("Failed to update payment:", err);
+      alert("Failed to update payment status");
+    }
+  };
+
+  // ── Send message ──
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedUser || !currentUser) return;
-    const messageText = newMessage.trim();
-    const tempId = `temp-${Date.now()}`;
+    const messageText      = newMessage.trim();
+    const tempId           = `temp-${Date.now()}`;
     const currentMessageType = messageType;
-    setMessages((prev) => [...prev, { id: tempId, text: messageText, user_id: currentUser.id, receiver_id: selectedUser.id, created_at: new Date().toISOString(), message_type: currentMessageType }]);
+
+    // Check session limit for normal messages
+    if (currentMessageType === 'normal') {
+      if (sessionRemaining <= 0) {
+        alert("You have used all 3 clarification messages for this session. Please send the ⭐ Original Answer now.");
+        setMessageType('answer');
+        return;
+      }
+    }
+
+    const tempMsg = {
+      id: tempId, text: messageText,
+      user_id: currentUser.id, receiver_id: selectedUser.id,
+      created_at: new Date().toISOString(),
+      message_type: currentMessageType,
+    };
+    setMessages((prev) => [...prev, tempMsg]);
     playOutgoingSound();
     setNewMessage("");
     setMessageType("normal");
+
+    // Optimistically decrement if normal
+    if (currentMessageType === 'normal') {
+      setSessionRemaining(prev => Math.max(0, prev - 1));
+    }
+
+    // ── SESSION RESET: admin sends ⭐ Answer ──
+    if (currentMessageType === 'answer') {
+      setSessionRemaining(3);
+    }
+
     try {
-      const response = await API.post("/messages", { text: messageText, receiver_id: selectedUser.id, message_type: currentMessageType });
+      const payload = {
+        text: messageText,
+        receiver_id: selectedUser.id,
+        message_type: currentMessageType,
+      };
+
+      const response = await API.post("/messages", payload);
       const sentMessage = response.data;
-      setMessages((prev) => prev.map((msg) => {
-        if (msg.id === tempId) {
-          sentMessageIds.current.add(sentMessage.id);
-          return { ...sentMessage, user_id: Number(sentMessage.user_id), receiver_id: Number(sentMessage.receiver_id) };
-        }
-        return msg;
-      }));
+
+      setMessages((prev) => {
+        const updated = prev.map((msg) => {
+          if (msg.id === tempId) {
+            sentMessageIds.current.add(sentMessage.id);
+            return { ...sentMessage, user_id: Number(sentMessage.user_id), receiver_id: Number(sentMessage.receiver_id) };
+          }
+          return msg;
+        });
+        // Recompute session from final list
+        setSessionRemaining(computeSessionRemaining(updated, currentUser.id));
+        return updated;
+      });
+
       setChatUsers((prevUsers) => {
-        const updated = prevUsers.map((u) => u.id === selectedUser.id ? { ...u, last_message: sentMessage } : u);
+        const updated = prevUsers.map((u) =>
+          u.id === selectedUser.id ? { ...u, last_message: sentMessage } : u
+        );
         return updated.sort((a, b) => {
           const da = a.last_message?.created_at ? new Date(a.last_message.created_at) : new Date(0);
           const db = b.last_message?.created_at ? new Date(b.last_message.created_at) : new Date(0);
@@ -273,6 +416,9 @@ export default function Messages() {
     } catch (error) {
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
       setNewMessage(messageText);
+      // Restore counter on failure
+      if (currentMessageType === 'normal') setSessionRemaining(prev => prev + 1);
+      if (currentMessageType === 'answer') setSessionRemaining(prev => prev - 3); // undo reset
     }
   };
 
@@ -290,25 +436,26 @@ export default function Messages() {
 
   const filteredUsers = chatUsers.filter((u) => u.name.toLowerCase().includes(search.toLowerCase()));
 
-  const bg = isDark ? "bg-[#0d0f14]" : "bg-gray-50";
-  const sidebarBg = isDark ? "bg-[#13151c]" : "bg-white";
-  const headerBg = isDark ? "bg-[#1a1d27]" : "bg-white";
-  const chatBg = isDark ? "bg-[#0a0c14]" : "bg-gray-100";
-  const inputBg = isDark ? "bg-[#1a1d27]" : "bg-white";
+  // Theme vars
+  const bg          = isDark ? "bg-[#0d0f14]" : "bg-gray-50";
+  const sidebarBg   = isDark ? "bg-[#13151c]" : "bg-white";
+  const headerBg    = isDark ? "bg-[#1a1d27]" : "bg-white";
+  const chatBg      = isDark ? "bg-[#0a0c14]" : "bg-gray-100";
+  const inputBg     = isDark ? "bg-[#1a1d27]" : "bg-white";
   const textPrimary = isDark ? "text-white" : "text-gray-900";
   const textSecondary = isDark ? "text-gray-400" : "text-gray-500";
   const borderColor = isDark ? "border-[#2a2d3a]" : "border-gray-200";
-  const hoverBg = isDark ? "hover:bg-[#1e2130]" : "hover:bg-gray-50";
-  const activeBg = isDark ? "bg-[#1e2130]" : "bg-indigo-50";
+  const hoverBg     = isDark ? "hover:bg-[#1e2130]" : "hover:bg-gray-50";
+  const activeBg    = isDark ? "bg-[#1e2130]" : "bg-indigo-50";
 
   return (
     <div className={`flex h-screen ${bg} overflow-hidden`}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&display=swap');
         .cinzel { font-family: 'Cinzel', serif; }
-        .msg-sent { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
-        .msg-recv { background: ${isDark ? '#1e2130' : '#f1f5f9'}; }
-        .msg-answer { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+        .msg-sent     { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+        .msg-recv     { background: ${isDark ? '#1e2130' : '#f1f5f9'}; }
+        .msg-answer   { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
         .msg-question { background: linear-gradient(135deg, #1e3a5f, #1e40af); }
         .star-dot::before { content: '✦'; color: #f59e0b; font-size: 8px; margin-right: 4px; }
         ::-webkit-scrollbar { width: 4px; }
@@ -316,18 +463,16 @@ export default function Messages() {
         ::-webkit-scrollbar-thumb { background: #3f4358; border-radius: 4px; }
       `}</style>
 
-      {/* SIDEBAR */}
+      {/* ── SIDEBAR ── */}
       <div className={`${selectedUser ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] lg:w-[360px] flex-col ${sidebarBg} border-r ${borderColor}`}>
 
         {/* Sidebar Header */}
         <div className={`${headerBg} px-4 py-3 flex items-center justify-between border-b ${borderColor}`}>
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div
-                onClick={() => navigate("/adminprofile")}
+              <div onClick={() => navigate("/adminprofile")}
                 className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm cursor-pointer"
-                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}
-              >
+                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
                 {currentUser?.name?.[0]?.toUpperCase() || "A"}
               </div>
               <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white" />
@@ -338,12 +483,10 @@ export default function Messages() {
             </div>
           </div>
 
-          {/* 3 dot menu */}
+          {/* 3-dot menu */}
           <div className="relative">
-            <button
-              onClick={() => setShowHeaderMenu(!showHeaderMenu)}
-              className={`p-2 rounded-lg ${hoverBg} ${textSecondary} transition-colors`}
-            >
+            <button onClick={() => setShowHeaderMenu(!showHeaderMenu)}
+              className={`p-2 rounded-lg ${hoverBg} ${textSecondary} transition-colors`}>
               <FaEllipsisV size={14} />
             </button>
             {showHeaderMenu && (
@@ -430,13 +573,13 @@ export default function Messages() {
         </div>
       </div>
 
-      {/* CHAT AREA */}
+      {/* ── CHAT AREA ── */}
       <div className={`flex-1 flex flex-col ${chatBg} min-w-0`}>
         {selectedUser ? (
           <>
             {/* Chat Header */}
             <div className={`${headerBg} border-b ${borderColor} flex-shrink-0`}>
-              <div className={`px-4 py-3 flex items-center gap-3`}>
+              <div className="px-4 py-3 flex items-center gap-3">
                 <FaArrowLeft className={`${textSecondary} md:hidden cursor-pointer`}
                   onClick={() => { selectedUserRef.current = null; setSelectedUser(null); navigate("/messages"); }} />
                 <div className="relative">
@@ -500,10 +643,9 @@ export default function Messages() {
                 {selectedUser.gender && <span className={textSecondary}>⚧ {selectedUser.gender}</span>}
                 {selectedUser.dob_nep && <span className={textSecondary}>📅 {new Date(selectedUser.dob_nep).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "2-digit" })}</span>}
                 {selectedUser.birth_time && <span className={textSecondary}>⏰ {(() => { const [h, m] = selectedUser.birth_time.split(":"); const hr = parseInt(h); return `${String(hr % 12 || 12).padStart(2, "0")}:${m} ${hr >= 12 ? "PM" : "AM"}`; })()}</span>}
-                {(selectedUser.perm_street || selectedUser.perm_city || selectedUser.perm_country) && (<span className={textSecondary}>🏠 {[selectedUser.perm_street, selectedUser.perm_city, selectedUser.perm_country].filter(Boolean).join(", ")}</span>)}
-                {(selectedUser.temp_street || selectedUser.temp_city || selectedUser.temp_country) && (<span className={textSecondary}>📍 {[selectedUser.temp_street, selectedUser.temp_city, selectedUser.temp_country].filter(Boolean).join(", ")}</span>
-              )}
-            </div>
+                {(selectedUser.perm_street || selectedUser.perm_city || selectedUser.perm_country) && <span className={textSecondary}>🏠 {[selectedUser.perm_street, selectedUser.perm_city, selectedUser.perm_country].filter(Boolean).join(", ")}</span>}
+                {(selectedUser.temp_street || selectedUser.temp_city || selectedUser.temp_country) && <span className={textSecondary}>📍 {[selectedUser.temp_street, selectedUser.temp_city, selectedUser.temp_country].filter(Boolean).join(", ")}</span>}
+              </div>
             </div>
 
             {/* Search Bar */}
@@ -520,7 +662,7 @@ export default function Messages() {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1"
-              style={{ backgroundImage: `url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')`, backgroundSize: "cover", backgroundOpacity: 0.3 }}>
+              style={{ backgroundImage: `url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')`, backgroundSize: "cover" }}>
               {loading ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3">
                   <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
@@ -533,11 +675,11 @@ export default function Messages() {
                   <p className={`text-sm ${textSecondary}`}>No messages yet</p>
                 </div>
               ) : messages.map((msg, index) => {
-                const isMyMessage = Number(msg.user_id) === Number(currentUser?.id);
-                const currentDate = msg.created_at ? new Date(msg.created_at).toDateString() : null;
-                const prevDate = index > 0 && messages[index - 1].created_at ? new Date(messages[index - 1].created_at).toDateString() : null;
-                const showDateSep = index === 0 || currentDate !== prevDate;
-                const isSearchResult = searchResults.includes(index);
+                const isMyMessage   = Number(msg.user_id) === Number(currentUser?.id);
+                const currentDate   = msg.created_at ? new Date(msg.created_at).toDateString() : null;
+                const prevDate      = index > 0 && messages[index - 1].created_at ? new Date(messages[index - 1].created_at).toDateString() : null;
+                const showDateSep   = index === 0 || currentDate !== prevDate;
+                const isSearchResult  = searchResults.includes(index);
                 const isCurrentResult = searchResults[currentSearchIndex] === index;
 
                 return (
@@ -568,20 +710,48 @@ export default function Messages() {
                           }).catch(() => {});
                         }}
                       >
-                        {isMyMessage && msg.message_type === "answer" && <p className="text-xs text-purple-200 mb-1 font-medium">⭐ Original Answer</p>}
+                        {isMyMessage && msg.message_type === "answer" && (
+                          <p className="text-xs text-purple-200 mb-1 font-medium">⭐ Original Answer</p>
+                        )}
+
                         {!isMyMessage && msg.message_type === "question" && (
-                          <div className="flex items-center justify-between mb-1.5">
-                            <p className="text-xs text-yellow-300 font-medium">💰 Paid Question</p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ml-2 ${
-                              msg.payment_status === 'paid'
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                : 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
-                            }`}>
-                              {msg.payment_status === 'paid' ? '✓ Paid' : '⏳ Unpaid'}
-                            </span>
+                          <div className="mb-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                                msg.payment_status === 'paid'     ? 'bg-emerald-500 text-white' :
+                                msg.payment_status === 'rejected' ? 'bg-red-500 text-white'     :
+                                                                    'bg-orange-500 text-white'
+                              }`}>
+                                {msg.payment_status === 'paid'     ? '✓ PAID'       :
+                                 msg.payment_status === 'rejected' ? '❌ REJECTED'  : '⚠ UNPAID'}
+                              </span>
+                              <p className="text-xs text-yellow-300 font-medium">💰 Question</p>
+                            </div>
+                            {msg.transaction_id && (
+                              <p className="text-xs text-gray-400 font-mono bg-black/20 px-2 py-1 rounded-lg mb-1.5">
+                                🔖 TXN: {msg.transaction_id}
+                              </p>
+                            )}
+                            {msg.payment_status !== 'paid' && msg.payment_status !== 'rejected' && (
+                              <div className="flex gap-1.5 mt-1">
+                                <button onClick={() => handleMarkPayment(msg.id, 'paid')}
+                                  className="flex-1 py-1 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90"
+                                  style={{ background: "rgba(16,185,129,0.8)" }}>
+                                  ✓ Mark Paid
+                                </button>
+                                <button onClick={() => handleMarkPayment(msg.id, 'rejected')}
+                                  className="flex-1 py-1 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90"
+                                  style={{ background: "rgba(239,68,68,0.8)" }}>
+                                  ✗ Reject
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
-                        <p className={`text-sm leading-relaxed break-words ${isMyMessage ? "text-white" : isDark ? "text-gray-100" : "text-gray-800"}`}>{msg.text}</p>
+
+                        <p className={`text-sm leading-relaxed break-words ${isMyMessage ? "text-white" : isDark ? "text-gray-100" : "text-gray-800"}`}>
+                          {msg.text}
+                        </p>
                         <div className="flex items-center justify-end gap-1 mt-1">
                           <span className={`text-xs opacity-60 ${isMyMessage ? "text-white" : textSecondary}`}>
                             {new Date(msg.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}
@@ -611,18 +781,27 @@ export default function Messages() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
+            {/* ── Input ── */}
             <div className={`${inputBg} border-t ${borderColor} flex-shrink-0`}>
-              <div className={`flex gap-2 px-3 pt-2`}>
-                <button onClick={() => setMessageType("normal")}
-                  className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-all ${messageType === "normal" ? "bg-indigo-500 text-white" : `${isDark ? "bg-[#1e2130]" : "bg-gray-100"} ${textSecondary}`}`}>
-                  💬 Normal
+              <div className="flex gap-2 px-3 pt-2">
+
+                {/* Normal button */}
+                <button
+                  onClick={() => setMessageType("normal")}
+                  disabled={sessionRemaining <= 0}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed
+                    ${messageType === "normal" ? "bg-indigo-500 text-white" : `${isDark ? "bg-[#1e2130]" : "bg-gray-100"} ${textSecondary}`}`}>
+                  💬 Normal ({sessionRemaining} left)
                 </button>
-                <button onClick={() => setMessageType("answer")}
+
+                {/* Answer button */}
+                <button
+                  onClick={() => setMessageType("answer")}
                   className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-all ${messageType === "answer" ? "bg-purple-600 text-white" : `${isDark ? "bg-[#1e2130]" : "bg-gray-100"} ${textSecondary}`}`}>
                   ⭐ Answer
                 </button>
               </div>
+
               <div className="px-3 py-3 flex items-end gap-2">
                 <textarea rows="1" value={newMessage}
                   onChange={(e) => {
@@ -668,7 +847,7 @@ export default function Messages() {
       {/* Note Modal */}
       {showNoteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className={`w-full max-w-md rounded-2xl overflow-hidden shadow-2xl`} style={{ background: isDark ? "#1a1d27" : "white" }}>
+          <div className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl" style={{ background: isDark ? "#1a1d27" : "white" }}>
             <div className={`flex items-center justify-between px-5 py-4 border-b ${borderColor}`}>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(245,158,11,0.15)" }}>📝</div>
@@ -677,17 +856,17 @@ export default function Messages() {
                   <p className={`text-xs ${textSecondary}`}>{selectedUser?.name}</p>
                 </div>
               </div>
-              <button onClick={() => setShowNoteModal(false)} className={`${textSecondary} hover:${textPrimary} text-xl`}>×</button>
+              <button onClick={() => setShowNoteModal(false)} className={`${textSecondary} text-xl`}>×</button>
             </div>
             <div className="p-5">
               <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Write your notes here..."
-                rows={5}
+                placeholder="Write your notes here..." rows={5}
                 className={`w-full rounded-xl px-4 py-3 text-sm ${textPrimary} placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none border ${borderColor}`}
                 style={{ background: isDark ? "#0d0f14" : "#f8fafc" }} autoFocus />
             </div>
-            <div className={`flex gap-3 px-5 pb-5`}>
-              <button onClick={() => setShowNoteModal(false)} className={`flex-1 py-2.5 rounded-xl text-sm ${textSecondary} border ${borderColor} transition-colors`}>Cancel</button>
+            <div className="flex gap-3 px-5 pb-5">
+              <button onClick={() => setShowNoteModal(false)}
+                className={`flex-1 py-2.5 rounded-xl text-sm ${textSecondary} border ${borderColor} transition-colors`}>Cancel</button>
               <button onClick={() => { localStorage.setItem(`note_${selectedUser.id}`, noteText); setSavedNote(noteText); setShowNoteModal(false); }}
                 className="flex-1 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-500 hover:bg-indigo-600 transition-colors">Save Note</button>
             </div>

@@ -36,6 +36,7 @@ class User extends Authenticatable
         'perm_city',
         'perm_street',
         'perm_address',
+        'free_messages_used',
 
     ];
 

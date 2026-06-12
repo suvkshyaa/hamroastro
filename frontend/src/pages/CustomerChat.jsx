@@ -3,7 +3,7 @@ import API from "../api";
 import echo from "../echo";
 import PaymentModal from "./PaymentModal";
 import { IoSend } from "react-icons/io5";
-import { FaQuestionCircle, FaComments, FaBars, FaTimes, FaUserCircle, FaSignOutAlt } from "react-icons/fa";
+import { FaQuestionCircle, FaComments, FaBars, FaTimes, FaSignOutAlt } from "react-icons/fa";
 import { useParams, useNavigate } from 'react-router-dom';
 import LoadingScreen from "../components/LoadingScreen";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
@@ -21,6 +21,8 @@ const validateUserData = (storedUser, apiUser) => {
 
 export default function CustomerChat() {
   const { adminId: adminIdFromUrl } = useParams();
+  const adminId = Number(adminIdFromUrl) || 1;
+
   const [user, setUser] = useState(null);
   const [message, setMessage] = useState("");
   const messagesEndRef = useRef(null);
@@ -40,17 +42,23 @@ export default function CustomerChat() {
   const { isDark, toggleTheme } = useTheme();
   const { playSound, playOutgoingSound } = useMessageSound();
 
+  // ── Session state ──
+  // sessionRemaining = free normal messages left in the current session
+  const [sessionRemaining, setSessionRemaining] = useState(3);
+  const [sessionType, setSessionType] = useState('welcome'); // 'welcome' | 'active'
+  const [lastAnswerId, setLastAnswerId] = useState(null);
+
   useOnlineStatus();
 
-  // Theme colors
-  const bg = isDark ? "bg-[#0d0f14]" : "bg-gray-50";
-  const sidebarBg = isDark ? "bg-[#13151c]" : "bg-white";
-  const headerBg = isDark ? "bg-[#1a1d27]" : "bg-white";
-  const inputBg = isDark ? "bg-[#1a1d27]" : "bg-white";
+  // Theme
+  const bg          = isDark ? "bg-[#0d0f14]" : "bg-gray-50";
+  const sidebarBg   = isDark ? "bg-[#13151c]" : "bg-white";
+  const headerBg    = isDark ? "bg-[#1a1d27]" : "bg-white";
+  const inputBg     = isDark ? "bg-[#1a1d27]" : "bg-white";
   const textPrimary = isDark ? "text-white" : "text-gray-900";
   const textSecondary = isDark ? "text-gray-400" : "text-gray-500";
   const borderColor = isDark ? "border-[#2a2d3a]" : "border-gray-200";
-  const cardBg = isDark ? "bg-[#1e2130]" : "bg-gray-50";
+  const cardBg      = isDark ? "bg-[#1e2130]" : "bg-gray-50";
 
   const getDateLabel = (dateString) => {
     if (!dateString) return "";
@@ -63,10 +71,22 @@ export default function CustomerChat() {
     return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   };
 
+  // ── Scroll to bottom ──
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    const scrollToBottom = () => {
+      if (messagesContainerRef.current)
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    };
+    scrollToBottom();
+    const t = setTimeout(scrollToBottom, 100);
+    return () => clearTimeout(t);
+  }, [messages]);
+
+  // ── Load user + messages on mount ──
   useEffect(() => {
     const loadUserAndMessages = async () => {
       const storedUser = JSON.parse(localStorage.getItem("user"));
@@ -81,29 +101,35 @@ export default function CustomerChat() {
       try {
         const userResponse = await API.get('/user');
         if (validateUserData(storedUser, userResponse.data)) {
-          const updatedUser = { ...storedUser, ...userResponse.data, id: storedUser.id, email: storedUser.email, role: storedUser.role || 'customer' };
+          const updatedUser = {
+            ...storedUser, ...userResponse.data,
+            id: storedUser.id, email: storedUser.email,
+            role: storedUser.role || 'customer',
+          };
           setUser(updatedUser);
           localStorage.setItem("user", JSON.stringify(updatedUser));
         }
       } catch {}
-      await loadMessages(Number(adminIdFromUrl) || 1);
+      await loadMessages(adminId);
     };
     loadUserAndMessages();
   }, []);
 
+  // ── Admin online status ──
   useEffect(() => {
     if (!user) return;
-    const checkAdminStatus = async () => {
+    const check = async () => {
       try {
-        const res = await API.get(`/status/${Number(adminIdFromUrl) || 1}`);
+        const res = await API.get(`/status/${adminId}`);
         setAdminOnline(res.data.is_online);
       } catch { setAdminOnline(false); }
     };
-    checkAdminStatus();
-    const interval = setInterval(checkAdminStatus, 30000);
+    check();
+    const interval = setInterval(check, 30000);
     return () => clearInterval(interval);
   }, [user]);
 
+  // ── Visibility change ──
   useEffect(() => {
     if (!user) return;
     const handleVisibilityChange = async () => {
@@ -125,43 +151,55 @@ export default function CustomerChat() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [user]);
 
-  useEffect(() => {
-    const scrollToBottom = () => {
-      if (messagesContainerRef.current) messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-    };
-    scrollToBottom();
-    const timer = setTimeout(scrollToBottom, 100);
-    return () => clearTimeout(timer);
-  }, [messages]);
-
-  const loadMessages = async (targetUserId) => {
+  // ── Load messages from API ──
+  const loadMessages = async (targetAdminId) => {
     try {
-      const res = await API.get(`/messages/${targetUserId}`);
+      const res = await API.get(`/messages/${targetAdminId}`);
       const storedUser = JSON.parse(localStorage.getItem("user"));
       const formatted = (res.data || []).map((msg) => ({
-        id: msg.id, text: msg.text,
+        id: msg.id,
+        text: msg.text,
         sender: Number(msg.user_id) === Number(storedUser.id) ? "customer" : "admin",
         message_type: msg.message_type || "normal",
-        user_id: Number(msg.user_id), receiver_id: Number(msg.receiver_id),
+        user_id: Number(msg.user_id),
+        receiver_id: Number(msg.receiver_id),
         is_read: msg.is_read ?? false,
         payment_status: msg.payment_status || null,
+        transaction_id: msg.transaction_id || null,
         created_at: msg.created_at,
         time: new Date(msg.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
       }));
       setMessages(formatted);
-      await API.post('/messages/mark-read', { sender_id: targetUserId });
+
+      // Track last answer for session reset detection
+      const lastAnswer = [...formatted].reverse().find(m => m.message_type === 'answer' && m.sender === 'admin');
+      if (lastAnswer) setLastAnswerId(lastAnswer.id);
+
+      await loadSessionStatus();
+      await API.post('/messages/mark-read', { sender_id: targetAdminId });
     } catch (err) { console.error("Error loading messages:", err); }
   };
 
+  // ── Load session status from backend ──
+  const loadSessionStatus = async () => {
+    try {
+      const res = await API.get(`/messages/free-status?admin_id=${adminId}`);
+      setSessionRemaining(res.data.session_remaining ?? res.data.global_remaining ?? 3);
+      setSessionType(res.data.session_type ?? 'welcome');
+      if (res.data.last_answer_id) setLastAnswerId(res.data.last_answer_id);
+    } catch {}
+  };
+
+  // ── Real-time incoming messages ──
   useEffect(() => {
     if (!user) return;
     const channelName = `chat.${user.id}`;
     const channel = echo.private(channelName);
 
     const handleIncomingMessage = (data) => {
-      const incomingUserId = Number(data.user_id);
+      const incomingUserId     = Number(data.user_id);
       const incomingReceiverId = Number(data.receiver_id);
-      const myId = Number(user.id);
+      const myId               = Number(user.id);
 
       // Message from admin to me
       if (incomingReceiverId === myId) {
@@ -169,14 +207,28 @@ export default function CustomerChat() {
           if (prev.some((m) => m.id === data.id)) return prev;
           playSound();
           if (document.hidden) setUnreadCount(prev.length + 1);
-          return [...prev, {
-            id: data.id, text: data.text || data.message, sender: "admin",
+
+          const newMsg = {
+            id: data.id,
+            text: data.text || data.message,
+            sender: "admin",
             message_type: data.message_type || "normal",
-            payment_status: data.payment_status || null, 
-            user_id: incomingUserId, receiver_id: incomingReceiverId,
+            payment_status: data.payment_status || null,
+            user_id: incomingUserId,
+            receiver_id: incomingReceiverId,
             created_at: data.created_at,
             time: new Date(data.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
-          }];
+          };
+
+          // ── SESSION RESET: admin sent ⭐ Answer ──
+          if (data.message_type === 'answer') {
+            setLastAnswerId(data.id);
+            // Reset session counter to 3 immediately
+            setSessionRemaining(3);
+            setSessionType('active');
+          }
+
+          return [...prev, newMsg];
         });
         if (!document.hidden) clearNotification();
         return;
@@ -189,7 +241,13 @@ export default function CustomerChat() {
           if (!hasTempWithSameText) return prev;
           return prev.map((m) =>
             String(m.id).startsWith("tmp-") && m.text === data.text
-              ? { id: data.id, text: data.text, sender: "customer", message_type: data.message_type || "normal", user_id: incomingUserId, receiver_id: incomingReceiverId, created_at: data.created_at, time: new Date(data.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) }
+              ? {
+                  id: data.id, text: data.text, sender: "customer",
+                  message_type: data.message_type || "normal",
+                  user_id: incomingUserId, receiver_id: incomingReceiverId,
+                  created_at: data.created_at,
+                  time: new Date(data.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
+                }
               : m
           );
         });
@@ -207,6 +265,7 @@ export default function CustomerChat() {
     return () => { channel.stopListening(".MessageSent", handleIncomingMessage); echo.leave(channelName); };
   }, [user]);
 
+  // ── WebSocket health check ──
   useEffect(() => {
     if (!user?.id) return;
     const healthCheck = setInterval(() => {
@@ -221,12 +280,27 @@ export default function CustomerChat() {
     finally { localStorage.clear(); window.location.href = "/login"; }
   };
 
+  // ── Send message (validates limits) ──
   const sendMessage = async () => {
     if (!message.trim() || !user) return;
+
+    if (messageType === 'normal') {
+      if (sessionRemaining <= 0) {
+        if (sessionType === 'welcome') {
+          alert("You have used all 3 free welcome messages. Please ask a paid question to continue.");
+        } else {
+          alert("You have used all 3 free messages for this session. Please ask a new paid question.");
+        }
+        setMessageType('question');
+        return;
+      }
+    }
+
     if (messageType === "question") {
       const words = message.trim().split(/\s+/).filter(w => w.length > 0);
       if (words.length > 150) { alert("Your question exceeds the 150 word limit."); return; }
     }
+
     if (window.innerWidth < 1024) setShowSidebar(false);
     const text = message.trim();
     try {
@@ -235,24 +309,29 @@ export default function CustomerChat() {
     } catch { alert("Failed to send message."); }
   };
 
+  // ── Actually send message to API ──
   const sendMessageWithPayment = async (text, transactionId = null) => {
-    const tempId = `tmp-${Date.now()}`;
+    const tempId             = `tmp-${Date.now()}`;
     const currentMessageType = messageType;
-    const currentAdminId = Number(adminIdFromUrl) || 1;
+
     setMessages((prev) => [...prev, {
-      id: tempId, text, sender: "customer", message_type: currentMessageType,
-      user_id: user.id, receiver_id: currentAdminId,
+      id: tempId, text, sender: "customer",
+      message_type: currentMessageType,
+      user_id: user.id, receiver_id: adminId,
       created_at: new Date().toISOString(),
       time: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
     }]);
     playOutgoingSound();
     setMessage(""); setMessageType("normal"); setWordCount(0); setWordLimitError("");
     setTimeout(() => { const ta = document.querySelector('textarea'); if (ta) ta.style.height = 'auto'; }, 0);
+
     try {
-      const payload = { text, receiver_id: currentAdminId, message_type: currentMessageType };
+      const payload = { text, receiver_id: adminId, message_type: currentMessageType };
       if (transactionId) payload.transaction_id = transactionId;
-      const res = await API.post("/messages", payload);
+
+      const res  = await API.post("/messages", payload);
       const real = res.data;
+
       setMessages((prev) => prev.map((m) => m.id === tempId ? {
         id: real.id, text: real.text, sender: "customer",
         message_type: real.message_type || currentMessageType,
@@ -261,11 +340,25 @@ export default function CustomerChat() {
         created_at: real.created_at,
         time: new Date(real.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
       } : m));
+
+      // ── SESSION RESET: customer sent new question ──
+      if (real.message_type === 'question') {
+        setSessionRemaining(3);
+        setSessionType('active');
+      } else if (real.message_type === 'normal') {
+        // Decrement immediately, then sync with backend
+        setSessionRemaining(prev => Math.max(0, prev - 1));
+      }
+
+      // Sync with backend to stay accurate
+      await loadSessionStatus();
+
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setMessage(text); setMessageType(currentMessageType);
-      if (err.response?.status === 402 || err.response?.data?.requires_payment) { setPendingMessage(text); setShowPaymentModal(true); }
-      else alert("Failed to send message");
+      if (err.response?.status === 402 || err.response?.data?.requires_payment) {
+        setPendingMessage(text); setShowPaymentModal(true);
+      } else alert("Failed to send message");
     }
   };
 
@@ -280,35 +373,38 @@ export default function CustomerChat() {
 
   if (!user) return <LoadingScreen message="Connecting to Hamro Astro..." />;
 
+  // Label shown on the normal button
+  const normalButtonLabel = sessionRemaining > 0
+    ? ` (${sessionRemaining} free)`
+    : ' (limit reached)';
+
   return (
     <div className={`min-h-screen w-full flex relative ${bg}`}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&display=swap');
         .cinzel { font-family: 'Cinzel', serif; }
-        .msg-sent { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
-        .msg-recv { background: ${isDark ? '#1e2130' : '#f1f5f9'}; }
-        .msg-answer { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+        .msg-sent     { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+        .msg-recv     { background: ${isDark ? '#1e2130' : '#f1f5f9'}; }
+        .msg-answer   { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
         .msg-question { background: linear-gradient(135deg, #1e3a5f, #1e40af); }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #3f4358; border-radius: 4px; }
         @keyframes typingBounce { 0%,100%{transform:translateY(0);opacity:.4} 50%{transform:translateY(-4px);opacity:1} }
-        @keyframes twinkle { 0%,100%{opacity:.3} 50%{opacity:1} }
       `}</style>
 
       {/* Mobile sidebar toggle */}
       <button onClick={() => setShowSidebar(!showSidebar)}
         className="lg:hidden fixed top-4 left-4 z-50 w-10 h-10 rounded-full flex items-center justify-center text-white shadow-lg"
         style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
-        {showSidebar ? <FaTimes size={16} /> : <FaBars size={16} />}
+        {showSidebar ? <FaTimes size={16} /> : <span style={{ fontSize: 18 }}>☰</span>}
       </button>
 
       {showSidebar && <div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-30" onClick={() => setShowSidebar(false)} />}
 
-      {/* SIDEBAR */}
+      {/* ── SIDEBAR ── */}
       <div className={`fixed lg:relative inset-y-0 left-0 z-40 w-72 sm:w-80 ${sidebarBg} border-r ${borderColor} flex flex-col overflow-hidden transform transition-transform duration-300 ease-in-out ${showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
 
-        {/* Sidebar Header */}
         <div className={`${headerBg} px-5 py-4 border-b ${borderColor} flex items-center justify-between flex-shrink-0`}>
           <div>
             <h2 className={`text-lg font-bold cinzel ${textPrimary}`}>✦ Hamro Astro</h2>
@@ -317,7 +413,7 @@ export default function CustomerChat() {
           <button onClick={() => setShowSidebar(false)} className={`lg:hidden ${textSecondary}`}><FaTimes size={18} /></button>
         </div>
 
-        {/* User Avatar & Name */}
+        {/* User info */}
         <div className="px-5 py-5 flex-shrink-0" style={{ borderBottom: `1px solid ${isDark ? "#2a2d3a" : "#e5e7eb"}` }}>
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold flex-shrink-0"
@@ -330,7 +426,6 @@ export default function CustomerChat() {
             </div>
           </div>
 
-          {/* Rashi highlight */}
           {user.rashi && (
             <div className="rounded-xl px-3 py-2 mb-3 text-center" style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)" }}>
               <p className={`text-xs ${textSecondary} mb-0.5`}>Your Rashi</p>
@@ -339,14 +434,14 @@ export default function CustomerChat() {
           )}
         </div>
 
-        {/* User Details */}
+        {/* User details */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           {[
-            { label: "Gender", value: user.gender, icon: "⚧" },
-            { label: "Birth Date", value: user.dob_nep ? new Date(user.dob_nep).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "2-digit" }) + " (AD)" : null, icon: "📅" },
-            { label: "Birth Time", value: user.birth_time ? (() => { const [h, m] = user.birth_time.split(":"); const hr = parseInt(h); return `${String(hr % 12 || 12).padStart(2, "0")}:${m} ${hr >= 12 ? "PM" : "AM"}`; })() : null, icon: "⏰" },
-            { label: "Birth Place", value: [user.perm_street, user.perm_city, user.perm_country].filter(Boolean).join(", "), icon: "🏠" },
-            { label: "Current Address", value: [user.temp_street, user.temp_city, user.temp_country].filter(Boolean).join(", "), icon: "📍" },
+            { label: "Gender",          value: user.gender,     icon: "⚧" },
+            { label: "Birth Date",       value: user.dob_nep ? new Date(user.dob_nep).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "2-digit" }) + " (AD)" : null, icon: "📅" },
+            { label: "Birth Time",       value: user.birth_time ? (() => { const [h, m] = user.birth_time.split(":"); const hr = parseInt(h); return `${String(hr % 12 || 12).padStart(2, "0")}:${m} ${hr >= 12 ? "PM" : "AM"}`; })() : null, icon: "⏰" },
+            { label: "Birth Place",      value: [user.perm_street, user.perm_city, user.perm_country].filter(Boolean).join(", "), icon: "🏠" },
+            { label: "Current Address",  value: [user.temp_street, user.temp_city, user.temp_country].filter(Boolean).join(", "), icon: "📍" },
           ].filter(item => item.value).map((item, i) => (
             <div key={i} className={`rounded-xl px-3 py-2.5 ${cardBg}`}>
               <p className={`text-xs ${textSecondary} mb-0.5`}>{item.icon} {item.label}</p>
@@ -375,18 +470,16 @@ export default function CustomerChat() {
         </div>
       </div>
 
-      {/* CHAT AREA */}
+      {/* ── CHAT AREA ── */}
       <div className="flex-1 flex flex-col w-full lg:w-auto h-screen overflow-hidden">
 
-        {/* Chat Header */}
+        {/* Header */}
         <div className={`${headerBg} border-b ${borderColor} flex-shrink-0`}>
           <div className="px-4 sm:px-6 py-4 flex items-center gap-3">
             <div className="w-10 h-10 lg:hidden flex-shrink-0" />
             <div className="relative flex-shrink-0">
               <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
-                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
-                ✦
-              </div>
+                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>✦</div>
               <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${adminOnline ? "bg-emerald-400" : "bg-gray-500"}`} />
             </div>
             <div className="flex-1 min-w-0">
@@ -415,7 +508,7 @@ export default function CustomerChat() {
           ) : messages.map((m, index) => {
             const isMyMessage = m.sender === "customer";
             const currentDate = m.created_at ? new Date(m.created_at).toDateString() : null;
-            const prevDate = index > 0 && messages[index - 1].created_at ? new Date(messages[index - 1].created_at).toDateString() : null;
+            const prevDate    = index > 0 && messages[index - 1].created_at ? new Date(messages[index - 1].created_at).toDateString() : null;
             const showDateSep = index === 0 || currentDate !== prevDate;
 
             return (
@@ -436,7 +529,7 @@ export default function CustomerChat() {
                     className={`max-w-[75%] sm:max-w-[65%] px-4 py-2.5 shadow-sm cursor-pointer ${
                       isMyMessage
                         ? m.message_type === "question" ? "msg-question" : "msg-sent"
-                        : m.message_type === "answer" ? "msg-answer" : "msg-recv"
+                        : m.message_type === "answer"   ? "msg-answer"   : "msg-recv"
                     }`}
                     style={{ borderRadius: isMyMessage ? "18px 18px 4px 18px" : "18px 18px 18px 4px" }}
                     onContextMenu={(e) => {
@@ -450,23 +543,34 @@ export default function CustomerChat() {
                       }).catch(() => {});
                     }}
                   >
+                    {/* Customer's paid question badge */}
                     {isMyMessage && m.message_type === "question" && (
-                      <div className="flex items-center justify-between mb-1.5 gap-2">
-                        <p className="text-xs text-yellow-300 font-medium">💰 Paid Question</p>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
-                          m.payment_status === 'paid'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
-                        }`}>
-                          {m.payment_status === 'paid' ? '✓ Paid' : '⏳ Unpaid'}
-                        </span>
+                      <div className="mb-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-yellow-300 font-medium">💰 Paid Question</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold flex-shrink-0 ${
+                            m.payment_status === 'paid'     ? 'bg-emerald-500 text-white' :
+                            m.payment_status === 'rejected' ? 'bg-red-500 text-white'     :
+                                                              'bg-orange-500 text-white'
+                          }`}>
+                            {m.payment_status === 'paid'     ? '✓ Verified'  :
+                             m.payment_status === 'rejected' ? '❌ Rejected' : '⏳ Awaiting'}
+                          </span>
+                        </div>
+                        {m.transaction_id && (
+                          <p className="text-xs text-white/40 mt-0.5 font-mono">TXN: {m.transaction_id}</p>
+                        )}
+                        {m.payment_status === 'rejected' && (
+                          <p className="text-xs text-red-300 mt-1">⚠️ Payment rejected. Please contact admin.</p>
+                        )}
                       </div>
                     )}
 
-
+                    {/* Admin's answer badge */}
                     {!isMyMessage && m.message_type === "answer" && (
                       <p className="text-xs text-purple-200 mb-1 font-medium">⭐ Original Answer</p>
                     )}
+
                     <p className={`text-sm leading-relaxed break-words ${isMyMessage ? "text-white" : isDark ? "text-gray-100" : "text-gray-800"}`}>
                       {m.text}
                     </p>
@@ -495,17 +599,37 @@ export default function CustomerChat() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
+        {/* ── Input Area ── */}
         <div className={`${inputBg} border-t ${borderColor} flex-shrink-0`}>
           <div className="flex gap-2 px-3 sm:px-4 pt-2">
-            <button onClick={() => { setMessageType("normal"); setWordCount(0); setWordLimitError(""); }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium transition-all ${messageType === "normal" ? "text-white" : `${textSecondary} ${isDark ? "bg-[#1e2130]" : "bg-gray-100"}`}`}
+
+            {/* Normal Chat button */}
+            <button
+              onClick={() => { setMessageType("normal"); setWordCount(0); setWordLimitError(""); }}
+              disabled={sessionRemaining <= 0}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium transition-all
+                ${messageType === "normal" ? "text-white" : `${textSecondary} ${isDark ? "bg-[#1e2130]" : "bg-gray-100"}`}
+                disabled:opacity-40 disabled:cursor-not-allowed`}
               style={messageType === "normal" ? { background: "linear-gradient(135deg, #6366f1, #8b5cf6)" } : {}}>
               <FaComments size={13} />
-              <span className="hidden sm:inline">Normal Chat</span>
-              <span className="sm:hidden">Chat</span>
+              <span className="hidden sm:inline">
+                💬 Normal Chat{normalButtonLabel}
+              </span>
+              <span className="sm:hidden">
+                💬 {sessionRemaining}
+              </span>
             </button>
-            <button onClick={() => { setMessageType("question"); if (message.trim()) { const w = message.trim().split(/\s+/).filter(x => x.length > 0); setWordCount(w.length); if (w.length > 150) setWordLimitError("Exceeds 150 words!"); } }}
+
+            {/* Ask Question button */}
+            <button
+              onClick={() => {
+                setMessageType("question");
+                if (message.trim()) {
+                  const w = message.trim().split(/\s+/).filter(x => x.length > 0);
+                  setWordCount(w.length);
+                  if (w.length > 150) setWordLimitError("Exceeds 150 words!");
+                }
+              }}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium transition-all ${messageType === "question" ? "text-white" : `${textSecondary} ${isDark ? "bg-[#1e2130]" : "bg-gray-100"}`}`}
               style={messageType === "question" ? { background: "linear-gradient(135deg, #1e3a5f, #1e40af)" } : {}}>
               <FaQuestionCircle size={13} />
@@ -523,13 +647,15 @@ export default function CustomerChat() {
           )}
 
           <div className="px-3 sm:px-4 py-3 flex items-end gap-2">
-            <textarea rows="1" value={message}
+            <textarea
+              rows="1"
+              value={message}
               onChange={(e) => {
                 const text = e.target.value;
                 setMessage(text);
                 e.target.style.height = 'auto';
                 e.target.style.height = e.target.scrollHeight + 'px';
-                API.post('/typing', { receiver_id: Number(adminIdFromUrl) || 1 }).catch(() => {});
+                API.post('/typing', { receiver_id: adminId }).catch(() => {});
                 if (messageType === "question") {
                   const words = text.trim().split(/\s+/).filter(w => w.length > 0);
                   const count = text.trim() === "" ? 0 : words.length;
@@ -541,8 +667,10 @@ export default function CustomerChat() {
               placeholder={messageType === "question" ? "Ask your question to the stars..." : "Type your message..."}
               autoComplete="off" autoCorrect="off" autoCapitalize="sentences"
               className={`flex-1 rounded-2xl px-4 py-2.5 text-sm ${textPrimary} placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none overflow-hidden max-h-32 border ${borderColor}`}
-              style={{ background: isDark ? "#0d0f14" : "#f8fafc", minHeight: "44px" }} />
-            <button onClick={sendMessage}
+              style={{ background: isDark ? "#0d0f14" : "#f8fafc", minHeight: "44px" }}
+            />
+            <button
+              onClick={sendMessage}
               disabled={!message.trim() || (messageType === "question" && wordCount > 150)}
               className="w-10 h-10 rounded-full flex items-center justify-center text-white transition-all disabled:opacity-40 flex-shrink-0"
               style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>

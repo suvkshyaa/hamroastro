@@ -19,7 +19,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('profile',         [UserProfileController::class, 'show']);
     Route::post('profile/update', [UserProfileController::class, 'update']);
     Route::get('messages',              [MessageController::class, 'index']);
-    Route::get('messages/{userId}',     [MessageController::class, 'show']);
     Route::post('messages',             [MessageController::class, 'store']);
     Route::get('chat-users',            [MessageController::class, 'chatUsers']);
     Route::get('users',                 [MessageController::class, 'allUsers']);
@@ -30,4 +29,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('typing',               [MessageController::class, 'typing']);
     Route::post('status/online',        [MessageController::class, 'setOnline']);
     Route::get('status/{userId}',       [MessageController::class, 'getStatus']);
+    Route::post('messages/{messageId}/payment', [MessageController::class, 'markPayment']);
+    Route::get('messages/free-status',  [MessageController::class, 'getFreeMessageStatus']);
+    Route::get('messages/{userId}',     [MessageController::class, 'show']);
 });

@@ -38,9 +38,15 @@ export default function PaymentModal({ isOpen, onClose, onPaymentSubmit, amount 
         setError('कृपया Transaction ID हाल्नुहोस्');
         return;
       }
-      if (transactionId.trim().length < 6) {
-        setError('Transaction ID कम्तिमा 6 अक्षर हुनुपर्छ');
+      if (transactionId.trim().length < 8) {
+        setError('Transaction ID must be at least 8 characters');
         return;
+      }
+      const fakeIds = ['12345678', 'test', 'abc', '00000000', '11111111'];
+      if (fakeIds.some(f => transactionId.toLowerCase().includes(f))) {
+        setError('Invalid Transaction ID — enter your real Fonepay ID');
+        return;
+      
       }
       setError('');
       setStep(3);
