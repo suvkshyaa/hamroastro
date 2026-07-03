@@ -28,6 +28,17 @@ export default function Register() {
     if (error) setError("");
   };
 
+  // ── Get admin ID dynamically instead of hardcoding 1 ──
+  const getAdminIdAndRedirect = async () => {
+    try {
+      const res = await API.get("/admin-info");
+      const adminId = res.data?.admin_id || 1; // fallback to 1 if endpoint fails
+      navigate(`/chat/${adminId}`, { replace: true });
+    } catch {
+      navigate("/chat/1", { replace: true }); // fallback if request fails
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSuccess(""); setError(""); setErrors({}); setLoading(true);
@@ -46,6 +57,9 @@ export default function Register() {
       setErrors({ password: "Password must be at least 8 characters" }); setError("Password too short"); setLoading(false); return;
     }
 
+    // ── Warn user if birth date/time were left empty (will default to placeholder values) ──
+    const usingDefaultBirthInfo = !formData.birthdate || !formData.birthtime;
+
     try {
       const payload = {
         name: formData.name.trim(), email: formData.email.trim(),
@@ -61,8 +75,14 @@ export default function Register() {
         const { token, user } = res.data;
         if (token) { API.defaults.headers.common['Authorization'] = `Bearer ${token}`; localStorage.setItem("token", token); }
         if (user) { localStorage.setItem("user", JSON.stringify(user)); localStorage.setItem("role", user.role || "customer"); }
-        setSuccess("Registration successful! Redirecting...");
-        setTimeout(() => navigate("/chat/1", { replace: true }), 1500);
+
+        if (usingDefaultBirthInfo) {
+          setSuccess("Registered! Note: birth date/time were left blank, so placeholder values were used — update them anytime in your profile.");
+        } else {
+          setSuccess("Registration successful! Redirecting...");
+        }
+
+        setTimeout(() => getAdminIdAndRedirect(), 1800);
       } else { setError(res.data.message || "Registration failed"); setLoading(false); }
     } catch (err) {
       if (err.response?.status === 422) {
@@ -218,6 +238,9 @@ export default function Register() {
                     <input type="time" name="birthtime" value={formData.birthtime} onChange={handleChange} className={inputClass} style={{ colorScheme: "dark" }} />
                   </div>
                 </div>
+                <p className="text-amber-200/30 text-xs crimson -mt-1">
+                  Leave blank if unknown — you can add this later in your profile. We won't use a fake date without telling you.
+                </p>
 
                 <div>
                   <label className={labelClass}>Gender</label>

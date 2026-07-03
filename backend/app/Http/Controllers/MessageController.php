@@ -68,7 +68,24 @@ class MessageController extends Controller
         if (!$user) return response()->json(['message' => 'Unauthenticated.'], 401);
 
         $otherUserId = $request->query('receiver_id') ?? $request->query('user_id');
-        if (!$otherUserId) return response()->json(['message' => 'user_id or receiver_id is required'], 400);
+
+        // ── No specific user requested ──
+        // If admin: return ALL messages where admin is sender or receiver (used by Dashboard)
+        // If customer: still require a target (keeps old behavior safe)
+        if (!$otherUserId) {
+            if ($user->role !== 'admin') {
+                return response()->json(['message' => 'user_id or receiver_id is required'], 400);
+            }
+
+            $messages = Message::where('user_id', $user->id)
+                ->orWhere('receiver_id', $user->id)
+                ->with('user:id,name')
+                ->orderBy('created_at', 'asc')
+                ->get()
+                ->map(fn($m) => $this->formatMessage($m));
+
+            return response()->json($messages);
+        }
 
         $messages = Message::where(function ($q) use ($user, $otherUserId) {
             $q->where('user_id', $user->id)->where('receiver_id', $otherUserId);

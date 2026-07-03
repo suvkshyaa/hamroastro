@@ -9,11 +9,25 @@ export default function UserProfile() {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [adminId, setAdminId] = useState(1); // fallback default
   const [formData, setFormData] = useState({
     name: "", gender: "", dob_nep: "", birth_time: "",
     perm_country: "", perm_city: "", perm_street: "",
     temp_country: "", temp_city: "", temp_street: "",
   });
+
+  // ── Fetch real admin ID once on mount ──
+  useEffect(() => {
+    const fetchAdminId = async () => {
+      try {
+        const res = await API.get("/admin-info");
+        if (res.data?.admin_id) setAdminId(res.data.admin_id);
+      } catch {
+        // keep fallback of 1 if this fails
+      }
+    };
+    fetchAdminId();
+  }, []);
 
   useEffect(() => {
     const storedUser = JSON.parse(localStorage.getItem("user"));
@@ -41,38 +55,31 @@ export default function UserProfile() {
     if (success) setSuccess("");
   };
 
-
-
-
-// Find handleSubmit and update:
-const handleSubmit = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     setError(""); setSuccess("");
     try {
       const res = await API.post("/profile/update", formData);
-      
+
       // ✅ Use the data returned from server, not just formData
       const updatedUser = res.data.user || { ...user, ...formData };
       setUser(updatedUser);
       localStorage.setItem("user", JSON.stringify(updatedUser));
-      
+
       setSuccess("Profile updated successfully!");
-      
+
       // ✅ Navigate back after 1.5 seconds so customer sees updated sidebar
       setTimeout(() => {
-        navigate("/chat/1");
+        navigate(`/chat/${adminId}`);
       }, 1500);
-      
+
     } catch (err) {
       setError(err.response?.data?.message || "Failed to update profile.");
     } finally {
       setSaving(false);
     }
   };
-
-
-
 
   const inputClass = "w-full bg-[#2a3942] border border-[#3d4a54] rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#00a884] transition-all text-sm";
   const labelClass = "block text-gray-400 text-xs font-medium mb-1.5 uppercase tracking-wider";
@@ -84,7 +91,7 @@ if (!user) return <LoadingScreen message="Loading your profile..." />;
       {/* Header */}
       <div className="bg-[#202c33] border-b border-[#2a3942] px-4 sm:px-6 py-4 flex items-center gap-4 sticky top-0 z-10">
         <button
-          onClick={() => navigate("/chat/1")}
+          onClick={() => navigate(`/chat/${adminId}`)}
           className="text-gray-400 hover:text-white transition-colors text-lg"
         >
           ←
@@ -248,7 +255,7 @@ if (!user) return <LoadingScreen message="Loading your profile..." />;
 
           <button
             type="button"
-            onClick={() => navigate("/chat/1")}
+            onClick={() => navigate(`/chat/${adminId}`)}
             className="w-full py-3 rounded-xl text-sm text-gray-400 border border-[#2a3942] hover:border-gray-500 hover:text-gray-200 transition-all"
           >
             ← Back to Chat

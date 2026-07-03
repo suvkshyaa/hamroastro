@@ -57,7 +57,7 @@ const Home = () => {
         .float { animation: floatUp 4s ease-in-out infinite; }
         .rotate-slow { animation: rotateSlow 30s linear infinite; }
         .shimmer { animation: shimmer 3s ease-in-out infinite; }
-        .fade-in-up { animation: fadeInUp 0.8s ease-out forwards; }
+        .fade-in-up { animation: fadeInUp 0.3s ease-out forwards; }
         .glow-btn { animation: glowPulse 2.5s ease-in-out infinite; }
         .card-hover { transition: transform 0.3s ease, box-shadow 0.3s ease; }
         .card-hover:hover { transform: translateY(-6px); box-shadow: 0 20px 40px rgba(139,92,246,0.2); }
@@ -113,7 +113,7 @@ const Home = () => {
         </div>
 
         {/* Headline */}
-        <div className="fade-in-up" style={{ animationDelay: "0.1s", opacity: 0 }}>
+        <div className="fade-in-up" style={{ animationDelay: "0s", opacity: 0 }}>
           <p className="text-purple-400 text-sm sm:text-base inter tracking-widest uppercase mb-3 shimmer">✦ Your Cosmic Journey Awaits ✦</p>
           <h1 className="cinzel font-bold text-white mb-4 leading-tight"
             style={{ fontSize: "clamp(2rem, 5vw, 3.8rem)" }}>
@@ -127,8 +127,8 @@ const Home = () => {
           </p>
         </div>
 
-        {/* CTA Buttons */}
-        <div className="fade-in-up flex flex-col sm:flex-row gap-4 justify-center items-center" style={{ animationDelay: "0.3s", opacity: 0 }}>
+       {/* CTA Buttons */}
+        <div className="fade-in-up flex flex-col sm:flex-row gap-4 justify-center items-center" style={{ animationDelay: "0.1s", opacity: 0 }}>
           <button onClick={() => navigate('/login')}
             className="glow-btn w-full sm:w-auto px-10 py-4 rounded-2xl text-white font-semibold text-base inter transition-all"
             style={{ background: "linear-gradient(135deg, #7c3aed, #6366f1)", boxShadow: "0 8px 30px rgba(124,58,237,0.4)" }}>
@@ -142,7 +142,7 @@ const Home = () => {
         </div>
 
         {/* Stats */}
-        <div className="fade-in-up flex flex-wrap justify-center gap-6 sm:gap-12 mt-14 sm:mt-16" style={{ animationDelay: "0.5s", opacity: 0 }}>
+        <div className="fade-in-up flex flex-wrap justify-center gap-6 sm:gap-12 mt-14 sm:mt-16" style={{ animationDelay: "0.2s", opacity: 0 }}>
           {[
             { value: "500+", label: "Happy Seekers" },
             { value: "24/7", label: "Always Available" },

@@ -18,6 +18,17 @@ export default function Login() {
     if (error) setError("");
   };
 
+  // ── Get admin ID dynamically instead of hardcoding 1 ──
+  const getAdminIdAndRedirect = async () => {
+    try {
+      const res = await API.get("/admin-info");
+      const adminId = res.data?.admin_id || 1; // fallback to 1 if endpoint fails
+      navigate(`/chat/${adminId}`);
+    } catch {
+      navigate("/chat/1"); // fallback if request fails
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -57,7 +68,7 @@ export default function Login() {
       if (role === "admin") {
         navigate("/messages");
       } else {
-        navigate("/chat/1");
+        await getAdminIdAndRedirect();
       }
     } catch (err) {
       if (err.response?.status === 422) {

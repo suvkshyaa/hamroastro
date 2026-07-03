@@ -626,19 +626,27 @@ export default function Messages() {
 
               {/* Customer info bar */}
               <div className={`px-4 py-2 border-t ${borderColor} flex flex-wrap gap-4 text-xs`}>
-                <div className="flex items-center gap-2">
+                
+               <div className="flex items-center gap-2">
                   <span className={textSecondary}>Rashi:</span>
                   <select value={selectedRashi}
-                    onChange={(e) => {
-                      const v = e.target.value; setSelectedRashi(v);
-                      if (v && selectedUser) API.post(`/users/${selectedUser.id}/rashi`, { rashi: v })
-                        .then(() => setChatUsers(p => p.map(u => u.id === selectedUser.id ? { ...u, rashi: v } : u))).catch(() => {});
-                    }}
+                    onChange={(e) => setSelectedRashi(e.target.value)}
                     className={`rounded-lg px-2 py-1 text-xs ${textPrimary} focus:outline-none focus:ring-1 focus:ring-indigo-500 border ${borderColor}`}
                     style={{ background: isDark ? "#0d0f14" : "#f8fafc" }}>
                     <option value="">Select Rashi</option>
                     {rashiList.map((r, i) => <option key={i} value={r} style={{ background: isDark ? "#1a1d27" : "white" }}>{r}</option>)}
                   </select>
+                  {selectedRashi && selectedRashi !== (selectedUser?.rashi || "") && (
+                    <button
+                      onClick={() => {
+                        if (selectedUser) API.post(`/users/${selectedUser.id}/rashi`, { rashi: selectedRashi })
+                          .then(() => setChatUsers(p => p.map(u => u.id === selectedUser.id ? { ...u, rashi: selectedRashi } : u)))
+                          .catch(() => {});
+                      }}
+                      className="text-xs px-2 py-1 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors">
+                      Save
+                    </button>
+                  )}
                 </div>
                 {selectedUser.gender && <span className={textSecondary}>⚧ {selectedUser.gender}</span>}
                 {selectedUser.dob_nep && <span className={textSecondary}>📅 {new Date(selectedUser.dob_nep).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "2-digit" })}</span>}
