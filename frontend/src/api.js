@@ -44,7 +44,7 @@ export const getCsrfCookie = async () => {
 };
 
 // ✅ Load token from localStorage on init
-const token = localStorage.getItem("token");
+const token = sessionStorage.getItem("token");
 if (token) {
   API.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   console.log("✅ Token loaded from localStorage");
@@ -53,7 +53,7 @@ if (token) {
 // ✅ Request interceptor - Add token to every request
 API.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token");
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -91,9 +91,9 @@ API.interceptors.response.use(
       console.log("❌ 401 Unauthorized - Clearing session");
       
       // Clear all auth data
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      localStorage.removeItem("role");
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("user");
+      sessionStorage.removeItem("role");
       delete API.defaults.headers.common['Authorization'];
       
       // Redirect to login (avoid loop)
