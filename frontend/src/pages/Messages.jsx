@@ -9,6 +9,41 @@ import { useTabNotification } from "../hooks/useTabNotification";
 import { useTheme } from "../hooks/useTheme";
 import { useMessageSound } from "../hooks/useMessageSound";
 
+function RashiSaveButton({ onSave }) {
+  const [status, setStatus] = React.useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+
+  const handleClick = async () => {
+    if (status === 'saving' || status === 'saved') return;
+    setStatus('saving');
+    try {
+      await onSave();
+      setStatus('saved');
+      setTimeout(() => setStatus('idle'), 2000);
+    } catch {
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 2000);
+    }
+  };
+
+  const config = {
+    idle:   { label: 'Save',   bg: 'bg-indigo-500 hover:bg-indigo-600', icon: null },
+    saving: { label: 'Saving', bg: 'bg-indigo-400 cursor-not-allowed',  icon: <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block mr-1" /> },
+    saved:  { label: 'Saved',  bg: 'bg-emerald-500 cursor-default',     icon: <span className="mr-1">✓</span> },
+    error:  { label: 'Failed', bg: 'bg-red-500 cursor-default',         icon: <span className="mr-1">✗</span> },
+  }[status];
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={status === 'saving' || status === 'saved'}
+      className={`flex items-center text-xs px-2 py-1 rounded-lg text-white transition-all ${config.bg}`}>
+      {config.icon}
+      {config.label}
+    </button>
+  );
+}
+
+
 export default function Messages() {
   const navigate = useNavigate();
   const { userId } = useParams();
@@ -636,16 +671,18 @@ export default function Messages() {
                     <option value="">Select Rashi</option>
                     {rashiList.map((r, i) => <option key={i} value={r} style={{ background: isDark ? "#1a1d27" : "white" }}>{r}</option>)}
                   </select>
-                  {selectedRashi && selectedRashi !== (selectedUser?.rashi || "") && (
-                    <button
-                      onClick={() => {
-                        if (selectedUser) API.post(`/users/${selectedUser.id}/rashi`, { rashi: selectedRashi })
-                          .then(() => setChatUsers(p => p.map(u => u.id === selectedUser.id ? { ...u, rashi: selectedRashi } : u)))
-                          .catch(() => {});
+                    {selectedRashi && selectedRashi !== (selectedUser?.rashi || "") && (
+                    <RashiSaveButton
+                      onSave={async () => {
+                        const uid = selectedUser.id;
+                        const rashi = selectedRashi;
+                        await API.post(`/users/${uid}/rashi`, { rashi });
+                        // ✅ Update sidebar list
+                        setChatUsers(p => p.map(u => u.id === uid ? { ...u, rashi } : u));
+                        // ✅ Update selectedUser so the button disappears correctly
+                        setSelectedUser(prev => ({ ...prev, rashi }));
                       }}
-                      className="text-xs px-2 py-1 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 transition-colors">
-                      Save
-                    </button>
+                    />
                   )}
                 </div>
                 {selectedUser.gender && <span className={textSecondary}>⚧ {selectedUser.gender}</span>}
