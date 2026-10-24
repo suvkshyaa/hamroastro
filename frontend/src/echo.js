@@ -31,7 +31,7 @@ const AUTH_ENDPOINT = `${getEnv('VITE_API_URL', isLocal ? 'http://localhost:8000
 // ✅ Configuration with mobile-optimized settings
 const config = {
     broadcaster: "reverb",
-    key: getEnv('VITE_REVERB_APP_KEY', 'sqja9bn48v14nbqjmts5'),
+    key: getEnv('VITE_REVERB_APP_KEY', ''),
     
     wsHost: getEnv('VITE_REVERB_HOST', isLocal ? 'localhost' : 'hamroastro.com'),
     wsPort: parseInt(getEnv('VITE_REVERB_PORT', isLocal ? '8080' : '443')),
@@ -68,7 +68,6 @@ const config = {
                 console.log("=== 🔐 CHANNEL AUTHORIZATION ===");
                 console.log("Channel:", channel.name);
                 console.log("Socket ID:", socketId);
-                console.log("Token (first 20 chars):", token.substring(0, 20) + "...");
                 console.log("================================");
 
                 fetch(AUTH_ENDPOINT, {

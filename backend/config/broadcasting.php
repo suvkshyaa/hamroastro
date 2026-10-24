@@ -2,7 +2,7 @@
 
 return [
 
-    'default' => env('BROADCAST_DRIVER', 'reverb'),
+    'default' => env('BROADCAST_CONNECTION', 'reverb'),
 
     'connections' => [
 

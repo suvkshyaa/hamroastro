@@ -16,7 +16,4 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-// If your React app is served from Laravel, you can optionally add:
-Route::get('{any}', function () {
-    return view('welcome');
-})->where('any', '.*');
+

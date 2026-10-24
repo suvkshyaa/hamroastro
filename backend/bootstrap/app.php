@@ -9,13 +9,12 @@ return Application::configure(basePath: dirname(__DIR__))
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
-        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
-    ->withBroadcasting(                                    // ✅ ADD THIS
-        __DIR__.'/../routes/channels.php',                 // ✅ ADD THIS
-        ['prefix' => 'api', 'middleware' => ['auth:sanctum']] // ✅ ADD THIS
-    )                                                      // ✅ ADD THIS
+    ->withBroadcasting(
+        __DIR__.'/../routes/channels.php',
+        ['prefix' => 'api', 'middleware' => ['auth:sanctum']]
+    )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->api(prepend: [
             \Illuminate\Http\Middleware\HandleCors::class,
