@@ -4,12 +4,10 @@ import Pusher from "pusher-js";
 window.Pusher = Pusher;
 
 // ✅ Safe environment variable access
+// ✅ Safe environment variable access (Create React App uses REACT_APP_ names)
 const getEnv = (key, fallback) => {
-    try {
-        return import.meta.env[key] || fallback;
-    } catch (e) {
-        return fallback;
-    }
+    const name = key.replace(/^VITE_/, 'REACT_APP_');
+    return process.env[name] || fallback;
 };
 
 // ✅ Detect environment
@@ -57,7 +55,7 @@ const config = {
     authorizer: (channel, options) => {
         return {
             authorize: (socketId, callback) => {
-                const token = localStorage.getItem("token");
+            const token = sessionStorage.getItem("token");
 
                 if (!token) {
                     console.error("❌ No token found in localStorage");
@@ -121,12 +119,12 @@ console.log("============================");
 const echo = new Echo(config);
 window.Echo = echo;
 
-// 🔥 MOBILE FIX: Track active channels for reconnection
+// 🔥  Track active channels for reconnection
 let activeChannels = new Set();
 let isPageVisible = true;
 let reconnectTimer = null;
 
-// 🔥 MOBILE FIX: Store channel subscriptions
+// 🔥  Store channel subscriptions
 const originalPrivateMethod = echo.private.bind(echo);
 echo.private = function(channel) {
     console.log("📝 Tracking private channel:", channel);
@@ -134,7 +132,7 @@ echo.private = function(channel) {
     return originalPrivateMethod(channel);
 };
 
-// 🔥 MOBILE FIX: Handle page visibility changes (mobile background/foreground)
+// 🔥 Handle page visibility changes (mobile background/foreground)
 const handleVisibilityChange = () => {
     if (document.hidden) {
         isPageVisible = false;
@@ -161,7 +159,7 @@ if (typeof document.hidden !== "undefined") {
     console.log("✅ Visibility change listener registered");
 }
 
-// 🔥 MOBILE FIX: Handle mobile-specific events
+// 🔥 Handle mobile-specific events
 if (isMobile) {
     // Handle page show (mobile Safari)
     window.addEventListener('pageshow', (event) => {
@@ -213,7 +211,7 @@ echo.connector.pusher.connection.bind("connecting", () => {
 echo.connector.pusher.connection.bind("disconnected", () => {
     console.log("=== 🔴 WEBSOCKET DISCONNECTED ===");
     
-    // 🔥 MOBILE FIX: Auto-reconnect after disconnect
+    // Auto-reconnect after disconnect
     if (isPageVisible && !reconnectTimer) {
         reconnectTimer = setTimeout(() => {
             console.log("🔄 Attempting reconnection...");
@@ -235,7 +233,7 @@ echo.connector.pusher.connection.bind("state_change", (states) => {
 echo.connector.pusher.connection.bind("unavailable", () => {
     console.error("⚠️ WebSocket connection unavailable");
     
-    // 🔥 MOBILE FIX: Try to reconnect when unavailable
+    // 🔥 Attempt reconnection after unavailable
     if (isPageVisible && !reconnectTimer) {
         reconnectTimer = setTimeout(() => {
             console.log("🔄 Reconnecting after unavailable...");
@@ -248,7 +246,7 @@ echo.connector.pusher.connection.bind("failed", () => {
     console.error("💀 WebSocket connection failed - check Reverb server");
 });
 
-// 🔥 MOBILE FIX: Periodic connection check (every 30 seconds)
+// 🔥 Periodic connection check (every 30 seconds)
 if (isMobile) {
     setInterval(() => {
         if (isPageVisible) {

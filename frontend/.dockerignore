@@ -1,0 +1,11 @@
+node_modules
+build
+build.zip
+vendor
+composer.json
+composer.lock
+.env*
+.git
+.gitignore
+README.md
+npm-debug.log

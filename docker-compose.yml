@@ -1,0 +1,84 @@
+services:
+  web:
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_REVERB_APP_KEY: ${REACT_APP_REVERB_APP_KEY}
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+      - reverb
+    restart: unless-stopped
+
+  app:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DB_HOST: mysql
+      REDIS_HOST: redis
+      REVERB_SERVER_HOST: reverb
+    volumes:
+      - storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  reverb:
+    build: ./backend
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+    env_file: ./backend/.env
+    environment:
+      DB_HOST: mysql
+      REDIS_HOST: redis
+      REVERB_SERVER_HOST: reverb
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  queue:
+    build: ./backend
+    command: php artisan queue:work --tries=3 --sleep=1
+    env_file: ./backend/.env
+    environment:
+      DB_HOST: mysql
+      REDIS_HOST: redis
+      REVERB_SERVER_HOST: reverb
+    volumes:
+      - storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  storage:
+  mysql_data:
+  redis_data:

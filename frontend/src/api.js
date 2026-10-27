@@ -1,6 +1,6 @@
 import axios from "axios";
 
-// ✅ VITE SYNTAX - Use import.meta.env
+// VITE SYNTAX - Use import.meta.env
 const getEnv = (key, fallback) => {
   try {
     return import.meta.env[key] || fallback;
@@ -9,11 +9,11 @@ const getEnv = (key, fallback) => {
   }
 };
 
-// ✅ Detect environment
+// Check if running in local development environment
 const isLocal = window.location.hostname === 'localhost' || 
                 window.location.hostname === '127.0.0.1';
 
-// ✅ Get base URL from environment or auto-detect
+//Base URL configuration
 const baseURL = getEnv(
   'VITE_API_URL', 
   isLocal ? 'http://localhost:8000' : 'https://hamroastro.com'
@@ -31,7 +31,7 @@ const API = axios.create({
   withCredentials: true,
 });
 
-// ✅ CSRF Cookie helper
+// Function to get CSRF cookie for Laravel Sanctum
 export const getCsrfCookie = async () => {
   try {
     await axios.get(`${baseURL}/sanctum/csrf-cookie`, {
@@ -43,14 +43,14 @@ export const getCsrfCookie = async () => {
   }
 };
 
-// ✅ Load token from localStorage on init
+// Load token from sessionStorage on initialization
 const token = sessionStorage.getItem("token");
 if (token) {
   API.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   console.log("✅ Token loaded from localStorage");
 }
 
-// ✅ Request interceptor - Add token to every request
+// Request interceptor - Attach token to headers
 API.interceptors.request.use(
   (config) => {
     const token = sessionStorage.getItem("token");
@@ -110,11 +110,11 @@ API.interceptors.response.use(
 export const setAuthToken = (token) => {
   if (token) {
     API.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    localStorage.setItem("token", token);
+    sessionStorage.setItem("token", token);
     console.log("✅ Auth token set in API headers");
   } else {
     delete API.defaults.headers.common['Authorization'];
-    localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
     console.log("🗑️ Auth token removed from API headers");
   }
 };
