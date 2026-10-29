@@ -2,13 +2,9 @@ import axios from "axios";
 
 // VITE SYNTAX - Use import.meta.env
 const getEnv = (key, fallback) => {
-  try {
-    return import.meta.env[key] || fallback;
-  } catch (e) {
-    return fallback;
-  }
+  const name = key.replace(/^VITE_/, 'REACT_APP_');
+  return process.env[name] || fallback;
 };
-
 // Check if running in local development environment
 const isLocal = window.location.hostname === 'localhost' || 
                 window.location.hostname === '127.0.0.1';

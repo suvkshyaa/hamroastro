@@ -4,6 +4,10 @@ services:
       context: ./frontend
       args:
         REACT_APP_REVERB_APP_KEY: ${REACT_APP_REVERB_APP_KEY}
+        REACT_APP_API_URL: http://aws.hamroastro.com
+        REACT_APP_REVERB_HOST: aws.hamroastro.com
+        REACT_APP_REVERB_PORT: "80"
+        REACT_APP_REVERB_SCHEME: http
     ports:
       - "80:80"
     depends_on:
