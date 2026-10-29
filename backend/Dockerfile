@@ -1,7 +1,8 @@
 FROM php:8.3-fpm-bookworm
 
+
 # PHP extensions Laravel needs (redis = phpredis, pcntl = for Reverb and queue workers)
-COPY --from=ghcr.io/mlocati/php-extensions-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
+ADD --chmod=755 https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/install-php-extensions
 RUN install-php-extensions pdo_mysql mbstring bcmath intl zip gd redis pcntl opcache
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
