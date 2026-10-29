@@ -15,7 +15,8 @@ RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-in
 
 # Copy the app, then finish the install
 COPY . .
-RUN composer dump-autoload --optimize --no-dev \
+RUN REVERB_APP_ID=build REVERB_APP_KEY=build REVERB_APP_SECRET=build \
+    composer dump-autoload --optimize --no-dev \
  && mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
  && chown -R www-data:www-data storage bootstrap/cache
 
