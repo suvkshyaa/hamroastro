@@ -26,6 +26,29 @@ A real-time astrology consultation chat application. Customers chat with an astr
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    user([User browser])
+
+    subgraph ec2["AWS EC2 (Ubuntu 24.04, Docker Compose)"]
+        web[web<br/>Nginx + React build]
+        app[app<br/>Laravel PHP-FPM]
+        reverb[reverb<br/>WebSocket server]
+        queue[queue<br/>queue worker]
+        mysql[(mysql)]
+        redis[(redis)]
+    end
+
+    user -->|HTTPS 443| web
+    web -->|/api, /sanctum| app
+    web -->|/app WebSocket| reverb
+    app -->|broadcast events| reverb
+    app --> mysql
+    app -->|sessions, cache, jobs| redis
+    queue -->|jobs| redis
+    queue --> mysql
+```
+
 All traffic enters through one Nginx container on ports 80 and 443:
 
 - `/` serves the compiled React app
