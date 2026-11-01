@@ -409,7 +409,7 @@ export default function CustomerChat() {
                     <div className="flex items-center gap-3">
             <img src="/logo.png" alt="Hamro Astro" className="w-10 h-10 object-contain flex-shrink-0" />
             <div>
-              <h2 className={`text-lg font-bold cinzel ${textPrimary}`}>Hamro Astro</h2>
+              <h2 className={`text-lg font-bold cinzel ${textPrimary}`}>&#10022; Hamro Astro</h2>
               <p className={`text-xs ${textSecondary}`}>Cosmic Guidance</p>
             </div>
           </div>
