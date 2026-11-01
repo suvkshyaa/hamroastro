@@ -504,15 +504,8 @@ export default function Messages() {
       {/* Sidebar Header */}
         <div className={`${headerBg} px-4 py-3 flex items-center justify-between border-b ${borderColor}`}>
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Hamro Astro" className="w-8 h-8 object-contain flex-shrink-0" />
-            <div className="relative">
-              <div onClick={() => navigate("/adminprofile")}
-                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm cursor-pointer"
-                style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)" }}>
-                {currentUser?.name?.[0]?.toUpperCase() || "A"}
-              </div>
-              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white" />
-            </div>
+            <img src="/logo.png" alt="Hamro Astro" onClick={() => navigate("/adminprofile")}
+              className="w-11 h-11 object-contain flex-shrink-0 cursor-pointer" />
             <div>
               <p className={`text-sm font-semibold ${textPrimary} cinzel`}>Hamro Astro</p>
               <p className="text-xs text-emerald-400">● Online</p>
