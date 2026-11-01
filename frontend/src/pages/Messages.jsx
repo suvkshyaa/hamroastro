@@ -501,9 +501,10 @@ export default function Messages() {
       {/* ── SIDEBAR ── */}
       <div className={`${selectedUser ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] lg:w-[360px] flex-col ${sidebarBg} border-r ${borderColor}`}>
 
-        {/* Sidebar Header */}
+      {/* Sidebar Header */}
         <div className={`${headerBg} px-4 py-3 flex items-center justify-between border-b ${borderColor}`}>
           <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Hamro Astro" className="w-8 h-8 object-contain flex-shrink-0" />
             <div className="relative">
               <div onClick={() => navigate("/adminprofile")}
                 className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm cursor-pointer"

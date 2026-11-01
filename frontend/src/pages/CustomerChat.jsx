@@ -406,9 +406,12 @@ export default function CustomerChat() {
       <div className={`fixed lg:relative inset-y-0 left-0 z-40 w-72 sm:w-80 ${sidebarBg} border-r ${borderColor} flex flex-col overflow-hidden transform transition-transform duration-300 ease-in-out ${showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
 
         <div className={`${headerBg} px-5 py-4 border-b ${borderColor} flex items-center justify-between flex-shrink-0`}>
-          <div>
-            <h2 className={`text-lg font-bold cinzel ${textPrimary}`}>✦ Hamro Astro</h2>
-            <p className={`text-xs ${textSecondary}`}>Cosmic Guidance</p>
+                    <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Hamro Astro" className="w-10 h-10 object-contain flex-shrink-0" />
+            <div>
+              <h2 className={`text-lg font-bold cinzel ${textPrimary}`}>✦ Hamro Astro</h2>
+              <p className={`text-xs ${textSecondary}`}>Cosmic Guidance</p>
+            </div>
           </div>
           <button onClick={() => setShowSidebar(false)} className={`lg:hidden ${textSecondary}`}><FaTimes size={18} /></button>
         </div>
