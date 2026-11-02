@@ -488,7 +488,7 @@ export default function Messages() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600&display=swap');
         .cinzel { font-family: 'Cinzel', serif; }
-        .msg-sent     { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+        .msg-sent     { background: #fcba03; }
         .msg-recv     { background: ${isDark ? '#1e2130' : '#f1f5f9'}; }
         .msg-answer   { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
         .msg-question { background: linear-gradient(135deg, #1e3a5f, #1e40af); }
@@ -726,6 +726,7 @@ export default function Messages() {
                 const showDateSep   = index === 0 || currentDate !== prevDate;
                 const isSearchResult  = searchResults.includes(index);
                 const isCurrentResult = searchResults[currentSearchIndex] === index;
+                const isNormalMine    = isMyMessage && msg.message_type !== "answer";
 
                 return (
                   <React.Fragment key={`${msg.id}-${index}`}>
@@ -794,14 +795,14 @@ export default function Messages() {
                           </div>
                         )}
 
-                        <p className={`text-sm leading-relaxed break-words ${isMyMessage ? "text-white" : isDark ? "text-gray-100" : "text-gray-800"}`}>
+                        <p className={`text-sm leading-relaxed break-words ${isNormalMine ? "text-gray-900" : isMyMessage ? "text-white" : isDark ? "text-gray-100" : "text-gray-800"}`}>
                           {msg.text}
                         </p>
                         <div className="flex items-center justify-end gap-1 mt-1">
-                          <span className={`text-xs opacity-60 ${isMyMessage ? "text-white" : textSecondary}`}>
+                                                   <span className={`text-xs opacity-60 ${isNormalMine ? "text-gray-900" : isMyMessage ? "text-white" : textSecondary}`}>
                             {new Date(msg.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}
                           </span>
-                          {isMyMessage && <FaCheckDouble className={`text-xs ${msg.is_read ? "text-blue-300" : "opacity-50 text-white"}`} />}
+                          {isMyMessage && <FaCheckDouble className={`text-xs ${msg.is_read ? (isNormalMine ? "text-blue-700" : "text-blue-300") : (isNormalMine ? "opacity-50 text-gray-900" : "opacity-50 text-white")}`} />}
                         </div>
                       </div>
                     </div>
@@ -835,7 +836,7 @@ export default function Messages() {
                   onClick={() => setMessageType("normal")}
                   disabled={sessionRemaining <= 0}
                   className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed
-                    ${messageType === "normal" ? "bg-indigo-500 text-white" : `${isDark ? "bg-[#1e2130]" : "bg-gray-100"} ${textSecondary}`}`}>
+                  ${messageType === "normal" ? "bg-[#fcba03] text-gray-900 font-semibold" : `${isDark ? "bg-[#1e2130]" : "bg-gray-100"} ${textSecondary}`}`}>
                   💬 Normal ({sessionRemaining} left)
                 </button>
 
@@ -860,7 +861,7 @@ export default function Messages() {
                   className={`input-scroll flex-1 rounded-2xl px-4 py-2.5 text-sm ${textPrimary} placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none overflow-y-auto max-h-32 border ${borderColor}`}
                   style={{ background: isDark ? "#0d0f14" : "#f8fafc", minHeight: "44px" }} />
                 <button onClick={handleSendMessage} disabled={!newMessage.trim()}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-all disabled:opacity-40 flex-shrink-0 ${messageType === "answer" ? "bg-purple-600 hover:bg-purple-700" : "bg-indigo-500 hover:bg-indigo-600"}`}>
+                                   className={`w-10 h-10 rounded-full flex items-center justify-center transition-all disabled:opacity-40 flex-shrink-0 ${messageType === "answer" ? "bg-purple-600 hover:bg-purple-700 text-white" : "bg-[#fcba03] hover:bg-[#e0a502] text-gray-900"}`}>
                   <FaPaperPlane size={14} />
                 </button>
               </div>
