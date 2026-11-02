@@ -493,6 +493,10 @@ export default function Messages() {
         .msg-answer   { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
         .msg-question { background: linear-gradient(135deg, #1e3a5f, #1e40af); }
         .star-dot::before { content: '✦'; color: #f59e0b; font-size: 8px; margin-right: 4px; }
+        .input-scroll { scrollbar-width: thin; scrollbar-color: ${isDark ? '#ffffff' : '#6b7280'} transparent; }
+        .input-scroll::-webkit-scrollbar { width: 5px; }
+        .input-scroll::-webkit-scrollbar-track { background: transparent; }
+        .input-scroll::-webkit-scrollbar-thumb { background: ${isDark ? '#ffffff' : '#6b7280'}; border-radius: 4px; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #3f4358; border-radius: 4px; }
@@ -699,6 +703,8 @@ export default function Messages() {
               </div>
             )}
 
+
+
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1"
               style={{ backgroundImage: `url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')`, backgroundSize: "cover" }}>
@@ -851,7 +857,7 @@ export default function Messages() {
                   }}
                   onKeyPress={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendMessage(); setTimeout(() => e.target.style.height = 'auto', 0); } }}
                   placeholder={messageType === "answer" ? "Type your answer..." : "Type a message..."}
-                  className={`flex-1 rounded-2xl px-4 py-2.5 text-sm ${textPrimary} placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none overflow-hidden max-h-32 border ${borderColor}`}
+                  className={`input-scroll flex-1 rounded-2xl px-4 py-2.5 text-sm ${textPrimary} placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none overflow-y-auto max-h-32 border ${borderColor}`}
                   style={{ background: isDark ? "#0d0f14" : "#f8fafc", minHeight: "44px" }} />
                 <button onClick={handleSendMessage} disabled={!newMessage.trim()}
                   className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-all disabled:opacity-40 flex-shrink-0 ${messageType === "answer" ? "bg-purple-600 hover:bg-purple-700" : "bg-indigo-500 hover:bg-indigo-600"}`}>
