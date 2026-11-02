@@ -139,8 +139,21 @@ class MessageController extends Controller
         $user = $request->user();
         if (!$user) return response()->json(['error' => 'Unauthenticated'], 401);
 
-        $messageType = $validated['message_type'];
+              $messageType = $validated['message_type'];
         $receiverId  = $validated['receiver_id'];
+
+        // ══════════════════════════════════════════
+        // ADMIN: Rashi must be saved before messaging
+        // ══════════════════════════════════════════
+        if ($user->role === 'admin') {
+            $targetCustomer = User::find($receiverId);
+            if ($targetCustomer && empty($targetCustomer->rashi)) {
+                return response()->json([
+                    'error'          => 'Please select and save this customer\'s Rashi before sending a message.',
+                    'rashi_required' => true,
+                ], 422);
+            }
+        }
 
         // ══════════════════════════════════════════
         // CUSTOMER: normal message limit
@@ -338,6 +351,7 @@ class MessageController extends Controller
                     'id'           => $user->id,
                     'name'         => $user->name,
                     'email'        => $user->email,
+                    'rashi'        => $user->rashi ?? null,
                     'gender'       => $user->gender ?? null,
                     'dob'          => $user->dob ?? null,
                     'dob_nep'      => $user->dob_nep ?? null,

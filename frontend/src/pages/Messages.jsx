@@ -9,7 +9,7 @@ import { useTabNotification } from "../hooks/useTabNotification";
 import { useTheme } from "../hooks/useTheme";
 import { useMessageSound } from "../hooks/useMessageSound";
 
-function RashiSaveButton({ onSave }) {
+function RashiSaveButton({ onSave, show }) {
   const [status, setStatus] = React.useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
 
   const handleClick = async () => {
@@ -24,6 +24,8 @@ function RashiSaveButton({ onSave }) {
       setTimeout(() => setStatus('idle'), 2000);
     }
   };
+
+  if (!show && status === 'idle') return null;
 
   const config = {
     idle:   { label: 'Save',   bg: 'bg-indigo-500 hover:bg-indigo-600', icon: null },
@@ -385,6 +387,11 @@ export default function Messages() {
     const tempId           = `temp-${Date.now()}`;
     const currentMessageType = messageType;
 
+    if (rashiLocked) {
+      alert("Please select and save this customer's Rashi first.");
+      return;
+    }
+
     // Check session limit for normal messages
     if (currentMessageType === 'normal') {
       if (sessionRemaining <= 0) {
@@ -448,9 +455,10 @@ export default function Messages() {
           return db - da;
         });
       });
-    } catch (error) {
+       } catch (error) {
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
       setNewMessage(messageText);
+      if (error.response?.data?.rashi_required) alert(error.response.data.error);
       // Restore counter on failure
       if (currentMessageType === 'normal') setSessionRemaining(prev => prev + 1);
       if (currentMessageType === 'answer') setSessionRemaining(prev => prev - 3); // undo reset
@@ -469,7 +477,10 @@ export default function Messages() {
     if (results.length > 0) document.getElementById(`msg-${results[0]}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  const filteredUsers = chatUsers.filter((u) => u.name.toLowerCase().includes(search.toLowerCase()));
+    const filteredUsers = chatUsers.filter((u) => u.name.toLowerCase().includes(search.toLowerCase()));
+
+  // 🔒 Admin can't message a customer until their Rashi is saved
+  const rashiLocked = !!selectedUser && !selectedUser.rashi;
 
   // Theme vars
   const bg          = isDark ? "bg-[#0d0f14]" : "bg-gray-50";
@@ -669,8 +680,9 @@ export default function Messages() {
                     <option value="">Select Rashi</option>
                     {rashiList.map((r, i) => <option key={i} value={r} style={{ background: isDark ? "#1a1d27" : "white" }}>{r}</option>)}
                   </select>
-                    {selectedRashi && selectedRashi !== (selectedUser?.rashi || "") && (
-                    <RashiSaveButton
+                  <RashiSaveButton
+                      key={selectedUser.id}
+                      show={!!selectedRashi && selectedRashi !== (selectedUser?.rashi || "")}
                       onSave={async () => {
                         const uid = selectedUser.id;
                         const rashi = selectedRashi;
@@ -681,7 +693,6 @@ export default function Messages() {
                         setSelectedUser(prev => ({ ...prev, rashi }));
                       }}
                     />
-                  )}
                 </div>
                 {selectedUser.gender && <span className={textSecondary}>⚧ {selectedUser.gender}</span>}
                 {selectedUser.dob_nep && <span className={textSecondary}>📅 {new Date(selectedUser.dob_nep).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "2-digit" })}</span>}
@@ -827,23 +838,30 @@ export default function Messages() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* ── Input ── */}
+          {/* ── Input ── */}
             <div className={`${inputBg} border-t ${borderColor} flex-shrink-0`}>
+              {rashiLocked && (
+                <div className="mx-3 mt-2 px-3 py-2 rounded-xl text-xs flex items-center gap-2"
+                  style={{ background: "rgba(252,186,3,0.12)", border: "1px solid rgba(252,186,3,0.35)", color: "#fcba03" }}>
+                  🔒 <span>Select and save this customer's Rashi above to start chatting.</span>
+                </div>
+              )}
               <div className="flex gap-2 px-3 pt-2">
 
                 {/* Normal button */}
                 <button
                   onClick={() => setMessageType("normal")}
-                  disabled={sessionRemaining <= 0}
+                  disabled={rashiLocked || sessionRemaining <= 0}
                   className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed
                   ${messageType === "normal" ? "bg-[#fcba03] text-gray-900 font-semibold" : `${isDark ? "bg-[#1e2130]" : "bg-gray-100"} ${textSecondary}`}`}>
                   💬 Normal ({sessionRemaining} left)
                 </button>
 
                 {/* Answer button */}
-                <button
+                                <button
                   onClick={() => setMessageType("answer")}
-                  className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-all ${messageType === "answer" ? "bg-purple-600 text-white" : `${isDark ? "bg-[#1e2130]" : "bg-gray-100"} ${textSecondary}`}`}>
+                  disabled={rashiLocked}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed ${messageType === "answer" ? "bg-purple-600 text-white" : `${isDark ? "bg-[#1e2130]" : "bg-gray-100"} ${textSecondary}`}`}>
                   ⭐ Answer
                 </button>
               </div>
@@ -857,7 +875,8 @@ export default function Messages() {
                     if (selectedUser) API.post('/typing', { receiver_id: selectedUser.id }).catch(() => {});
                   }}
                   onKeyPress={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendMessage(); setTimeout(() => e.target.style.height = 'auto', 0); } }}
-                  placeholder={messageType === "answer" ? "Type your answer..." : "Type a message..."}
+                  disabled={rashiLocked}
+                  placeholder={rashiLocked ? "Save Rashi first to type..." : messageType === "answer" ? "Type your answer..." : "Type a message..."}
                   className={`input-scroll flex-1 rounded-2xl px-4 py-2.5 text-sm ${textPrimary} placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none overflow-y-auto max-h-32 border ${borderColor}`}
                   style={{ background: isDark ? "#0d0f14" : "#f8fafc", minHeight: "44px" }} />
                 <button onClick={handleSendMessage} disabled={!newMessage.trim()}
